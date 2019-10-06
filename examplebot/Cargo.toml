@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 tmi-rs = { path = "../" }
 env_logger = "0.6"
+tokio = "0.2.0-alpha.6"
