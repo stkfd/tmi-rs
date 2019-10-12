@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![feature(async_closure)]
 
 #[macro_use]
 extern crate log;
@@ -10,6 +11,7 @@ pub mod client;
 mod config;
 mod data;
 mod errors;
+mod futures;
 mod irc;
 mod sender;
 

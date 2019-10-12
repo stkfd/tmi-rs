@@ -1,67 +1,67 @@
 use fnv::FnvHashMap;
 
-pub struct Event<'a> {
-    sender: &'a str,
-    event: EventContent<'a>,
-    tags: FnvHashMap<&'a str, &'a str>,
+pub struct Event<T> {
+    sender: T,
+    event: EventContent<T>,
+    tags: FnvHashMap<T, T>,
 }
 
-impl<'a> Event<'a> {
-    pub fn sender(&self) -> &str {
-        self.sender
+impl<T> Event<T> {
+    pub fn sender(&self) -> &T {
+        &self.sender
     }
 
-    pub fn event(&self) -> &EventContent {
+    pub fn event(&self) -> &EventContent<T> {
         &self.event
     }
 
-    pub fn tags(&self) -> &FnvHashMap<&'a str, &'a str> {
+    pub fn tags(&self) -> &FnvHashMap<T, T> {
         &self.tags
     }
 }
 
-pub enum EventContent<'a> {
-    PrivMsg(ChannelMessageEvent<'a>),
-    Join(UserEvent<'a>),
-    Mode(ModeChangeEvent<'a>),
-    Names(NamesListEvent<'a>),
+pub enum EventContent<T> {
+    PrivMsg(ChannelMessageEvent<T>),
+    Join(UserEvent<T>),
+    Mode(ModeChangeEvent<T>),
+    Names(NamesListEvent<T>),
     EndOfNames,
-    Part(UserEvent<'a>),
-    ClearChat(ChannelUserEvent<'a>),
-    ClearMsg(ChannelMessageEvent<'a>),
-    Host(HostEvent<'a>),
-    Notice(ChannelMessageEvent<'a>),
+    Part(UserEvent<T>),
+    ClearChat(ChannelUserEvent<T>),
+    ClearMsg(ChannelMessageEvent<T>),
+    Host(HostEvent<T>),
+    Notice(ChannelMessageEvent<T>),
     Reconnect,
-    RoomState(ChannelEvent<'a>),
-    UserNotice(ChannelMessageEvent<'a>),
-    UserState(ChannelEvent<'a>),
+    RoomState(ChannelEvent<T>),
+    UserNotice(ChannelMessageEvent<T>),
+    UserState(ChannelEvent<T>),
     GlobalUserState,
     Unknown,
 }
 
-pub struct NamesListEvent<'a> {
-    names: Vec<&'a str>,
+pub struct NamesListEvent<T> {
+    names: Vec<T>,
 }
-pub struct ModeChangeEvent<'a> {
-    mode_change: &'a str,
-    user: &'a str,
+pub struct ModeChangeEvent<T> {
+    mode_change: T,
+    user: T,
 }
-pub struct UserEvent<'a> {
-    user: &'a str,
+pub struct UserEvent<T> {
+    user: T,
 }
-pub struct ChannelMessageEvent<'a> {
-    channel: &'a str,
-    message: &'a str,
+pub struct ChannelMessageEvent<T> {
+    channel: T,
+    message: T,
 }
-pub struct ChannelEvent<'a> {
-    channel: &'a str,
+pub struct ChannelEvent<T> {
+    channel: T,
 }
-pub struct HostEvent<'a> {
-    hosting_channel: &'a str,
-    target_channel: Option<&'a str>,
+pub struct HostEvent<T> {
+    hosting_channel: T,
+    target_channel: Option<T>,
     viewer_count: usize,
 }
-pub struct ChannelUserEvent<'a> {
-    channel: &'a str,
-    user: Option<&'a str>,
+pub struct ChannelUserEvent<T> {
+    channel: T,
+    user: Option<T>,
 }

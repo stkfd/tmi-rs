@@ -1,26 +1,23 @@
 use crate::client_messages::{ClientMessage, Command};
-use crate::Error;
-use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_tungstenite::WebSocketStream;
+use crate::{Error, ErrorKind};
 use tokio_tungstenite::tungstenite::Message;
+use futures::{SinkExt};
 
-pub struct TwitchChatStream<S> {
-    pub(crate) ws: WebSocketStream<S>,
+pub struct TwitchChatSender<Sink> {
+    pub(crate) ws: Sink
 }
 
-impl<S: AsyncWrite + AsyncRead + Unpin> TwitchChatStream<S> {
-    pub fn new(ws_stream: WebSocketStream<S>) -> TwitchChatStream<S> {
-        TwitchChatStream {
-            ws: ws_stream
+impl<Sink> TwitchChatSender<Sink> where Sink: SinkExt<Message> + Unpin {
+    pub fn new(sink: Sink) -> TwitchChatSender<Sink> {
+        TwitchChatSender {
+            ws: sink,
         }
     }
 
     pub async fn send(&mut self, message: ClientMessage<'_>) -> Result<(), Error> {
-        let formatted_message = format!("{}", message);
-        debug!("{}", formatted_message);
         self.ws.send(Message::from(format!("{}", message)))
             .await
-            .map_err(Into::into)
+            .map_err(|_err| Error::new(ErrorKind::SendError, "Channel error while sending a message"))
     }
 
     pub async fn login(&mut self, username: &str, token: &str) -> Result<(), Error> {

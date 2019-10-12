@@ -13,5 +13,7 @@ async fn main() {
         .unwrap();
     let client = TwitchClient::new(config);
 
-    client.connect().await;
+    let (sender, finish) = client.connect().await.unwrap();
+
+    finish.await;
 }

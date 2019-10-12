@@ -3,6 +3,7 @@ use tokio_tungstenite::tungstenite::Error as TungsteniteError;
 
 #[derive(Debug)]
 pub enum ErrorKind {
+    SendError,
     MissingConfigValue,
     WebsocketError(TungsteniteError),
 }
