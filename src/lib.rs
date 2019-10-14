@@ -11,9 +11,11 @@ pub mod client;
 mod config;
 mod data;
 mod errors;
-mod futures;
 mod irc;
+mod irc_constants;
 mod sender;
+
+pub use futures;
 
 pub use config::*;
 pub use config::*;

@@ -1,17 +1,19 @@
 use std::borrow::Cow;
-use tokio_tungstenite::tungstenite::Error as TungsteniteError;
+use std::error::Error as ErrorTrait;
 
 #[derive(Debug)]
 pub enum ErrorKind {
     SendError,
     MissingConfigValue,
-    WebsocketError(TungsteniteError),
+    WebsocketError,
+    EventParseError,
 }
 
 #[derive(Debug)]
 pub struct Error {
     kind: ErrorKind,
     details: Cow<'static, str>,
+    cause: Option<Box<dyn ErrorTrait>>,
 }
 
 impl Error {
@@ -19,12 +21,19 @@ impl Error {
         Error {
             kind: kind.into(),
             details: details.into(),
+            cause: None,
         }
     }
-}
 
-impl From<TungsteniteError> for Error {
-    fn from(err: TungsteniteError) -> Self {
-        Error::new(ErrorKind::WebsocketError(err), "Websocket error")
+    pub fn with_cause(
+        kind: impl Into<ErrorKind>,
+        details: impl Into<Cow<'static, str>>,
+        cause: impl Into<Box<dyn ErrorTrait>>,
+    ) -> Error {
+        Error {
+            kind: kind.into(),
+            details: details.into(),
+            cause: Some(cause.into()),
+        }
     }
 }

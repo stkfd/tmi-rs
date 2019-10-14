@@ -15,6 +15,6 @@ pub struct ClientConfig {
     #[builder(default = "false")]
     pub cap_commands: bool,
 
-    #[builder(default = "false")]
+    #[builder(default = "true")]
     pub cap_tags: bool,
 }

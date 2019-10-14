@@ -8,3 +8,4 @@ edition = "2018"
 tmi-rs = { path = "../" }
 env_logger = "0.6"
 tokio = "0.2.0-alpha.6"
+log = "0.4.8"

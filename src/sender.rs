@@ -1,7 +1,7 @@
 use crate::client_messages::{ClientMessage, Command};
 use crate::{Error, ErrorKind};
 use tokio_tungstenite::tungstenite::Message;
-use futures::{SinkExt};
+use futures::{SinkExt, StreamExt, Stream};
 
 pub struct TwitchChatSender<Sink> {
     pub(crate) ws: Sink
@@ -20,9 +20,19 @@ impl<Sink> TwitchChatSender<Sink> where Sink: SinkExt<Message> + Unpin {
             .map_err(|_err| Error::new(ErrorKind::SendError, "Channel error while sending a message"))
     }
 
+    pub async fn send_all<'a>(&mut self, messages: impl Stream<Item=&'a ClientMessage<'a>> + Unpin) -> Result<(), Error>
+    {
+        self.ws.send_all(&mut messages.map(|message| Message::from(format!("{}", message))))
+            .await
+            .map_err(|_err| Error::new(ErrorKind::SendError, "Channel error while sending a message"))
+    }
+
+    pub async fn join(&mut self, channel: &str) -> Result<(), Error> {
+        self.send(ClientMessage::Join(channel)).await
+    }
+
     pub async fn login(&mut self, username: &str, token: &str) -> Result<(), Error> {
-        self.send(ClientMessage::Pass(token)).await?;
-        self.send(ClientMessage::Nick(username)).await
+        self.send_all(futures::stream::iter([ClientMessage::Pass(token), ClientMessage::Nick(username)].into_iter())).await
     }
 
     pub async fn ban(&mut self, channel: &str, username: &str) -> Result<(), Error> {

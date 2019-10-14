@@ -1,7 +1,13 @@
+#![feature(async_closure)]
+
 use tmi_rs::client::TwitchClient;
 use tmi_rs::ClientConfigBuilder;
-use tokio::prelude::*;
+use tmi_rs::futures::{StreamExt, future::ready};
+use tmi_rs::events::EventContent;
 use std::env;
+
+#[macro_use]
+extern crate log;
 
 #[tokio::main]
 async fn main() {
@@ -12,8 +18,10 @@ async fn main() {
         .build()
         .unwrap();
     let client = TwitchClient::new(config);
+    let (mut sender, mut events) = client.connect().await.unwrap();
 
-    let (sender, finish) = client.connect().await.unwrap();
-
-    finish.await;
+    sender.join("forsen").await.unwrap();
+    events.by_ref().for_each(async move |event| {
+        info!("{:?}", event);
+    }).await;
 }
