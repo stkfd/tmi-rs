@@ -12,7 +12,7 @@ pub struct ClientConfig {
     #[builder(default = "false")]
     pub cap_membership: bool,
 
-    #[builder(default = "false")]
+    #[builder(default = "true")]
     pub cap_commands: bool,
 
     #[builder(default = "true")]

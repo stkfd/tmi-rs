@@ -1,17 +1,19 @@
-use crate::{ClientConfig, TwitchChatSender, Error, ErrorKind};
-use crate::events::Event;
+use std::sync::Arc;
+use std::time::Duration;
+
+use broadcaster::BroadcastChannel;
+use futures::{Sink, StreamExt};
+use futures_util::future::{Either, poll_fn, select};
+use tokio_timer::Interval;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
-use std::time::Duration;
-use tokio_timer::Interval;
-use futures::{StreamExt, SinkExt, Stream};
-use futures_util::future::{Either, select, poll_fn};
-use std::sync::Arc;
-use futures::channel::mpsc;
-use futures::channel::mpsc::UnboundedSender;
+
+use crate::{ClientConfig, Error, TwitchChatSender};
+use crate::data::client_messages::{Capability, ClientMessage};
+use crate::events::Event;
 use crate::irc::IrcMessage;
-use crate::data::client_messages::{ClientMessage, Capability};
 use std::convert::TryFrom;
+use std::borrow::Cow;
 
 #[derive(Debug)]
 pub struct TwitchClient {
@@ -27,24 +29,24 @@ impl TwitchClient {
 
     /// Connects to the Twitch servers and listens in a separate thread. Await the returned future
     /// to block until the connection is closed.
-    pub async fn connect(&self) -> Result<(TwitchChatSender<mpsc::UnboundedSender<Message>>, impl Stream<Item=Arc<Event<String>>>), Error> {
+    pub async fn connect(&self) -> Result<(TwitchChatSender<impl Sink<Message> + Clone>, BroadcastChannel<Arc<Event<String>>>), Error> {
         debug!("Connecting to {}", self.config.url);
         let (mut ws_stream, _) = connect_async(self.config.url.clone())
             .await
             .map_err(|e| {
                 error!("Connection to {} failed", self.config.url);
-                Error::with_cause(ErrorKind::WebsocketError, "Failed to connect to the chat server.", Box::new(e))
+                Error::WebsocketError { details: Cow::from("Failed to connect to the chat server"), source: e }
             })?;
 
+        // MPSC channel that is used by the consumer program to send messages
         let (channel_sender, mut channel_receiver) = futures::channel::mpsc::unbounded();
-
-        let mut sender = TwitchChatSender::new(
-            channel_sender,
-        );
+        let mut sender = TwitchChatSender::new(channel_sender);
 
         let mut heartbeat = Interval::new_interval(Duration::from_secs(5));
 
-        let (mut event_sink, event_stream): (UnboundedSender<Arc<Event<String>>>, _) = futures::channel::mpsc::unbounded();
+        // Broadcast
+        let evt_channel = BroadcastChannel::new();
+        let evt_sender = evt_channel.clone();
 
         tokio_executor::spawn(async move {
             loop {
@@ -52,12 +54,12 @@ impl TwitchClient {
                     poll_fn(|cx| heartbeat.poll_next(cx)),
                     select(
                         ws_stream.next(),
-                        channel_receiver.next()
-                    )
+                        channel_receiver.next(),
+                    ),
                 ).await;
                 match either1 {
                     Either::Left((_heartbeat, _)) => {
-                        debug!("Heartbeat")
+                        trace!("Heartbeat")
                     }
                     Either::Right((either2, _)) => {
                         match either2 {
@@ -65,38 +67,39 @@ impl TwitchClient {
                                 match next_in {
                                     Some(Ok(next_in)) => match next_in {
                                         Message::Text(msg) => {
+                                            debug!("< {}", msg);
                                             match IrcMessage::<&str>::parse_many(&msg) {
                                                 Ok((_remaining, messages)) => {
                                                     for irc_msg in messages {
-                                                        debug!("{:?}", irc_msg);
-                                                        let owned_event: Event<String> = Event::try_from(irc_msg).unwrap().into();
-                                                        event_sink.send(Arc::new(owned_event)).await.unwrap();
+                                                        let owned_event: Event<String> = (&Event::try_from(irc_msg).unwrap()).into();
+                                                        evt_sender.send(&Arc::new(owned_event)).await.unwrap();
                                                     }
-                                                },
+                                                }
                                                 Err(err) => {
                                                     error!("IRC parse error: {:?}", err);
                                                 }
                                             }
-                                        },
+                                        }
                                         Message::Binary(msg) => info!("< Binary<{} bytes>", msg.len()),
                                         Message::Close(close_frame) => {
                                             if let Some(close_frame) = close_frame { info!("Received close frame: {}", close_frame) }
                                             info!("Connection closed by the server.");
+                                            evt_sender.send(&Arc::new(Event::close())).await.unwrap();
                                             break;
-                                        },
-                                        Message::Ping(_payload) => debug!("< PING"),
-                                        Message::Pong(_payload) => debug!("< PONG"),
+                                        }
+                                        Message::Ping(_payload) => debug!("< WS PING"),
+                                        Message::Pong(_payload) => debug!("< WS PONG"),
                                     },
                                     Some(Err(e)) => {
                                         error!("{}", e);
                                         break;
-                                    },
+                                    }
                                     None => break
                                 }
                             }
                             Either::Right((next_out, _)) => {
                                 if let Some(next_out) = next_out {
-                                    info!("> {}", next_out);
+                                    debug!("> {}", next_out);
                                     ws_stream.send(next_out).await.unwrap();
                                 }
                             }
@@ -104,7 +107,7 @@ impl TwitchClient {
                     }
                 }
             }
-            event_sink.send(Arc::new(Event::close())).await.unwrap();
+            evt_sender.send(&Arc::new(Event::close())).await.unwrap();
         });
 
         let mut capabilities = Vec::new();
@@ -114,7 +117,7 @@ impl TwitchClient {
         sender.send(ClientMessage::CapRequest(&capabilities)).await?;
         sender.login(&self.config.username, &self.config.token).await?;
 
-        Ok((sender, event_stream))
+        Ok((sender, evt_channel))
     }
 }
 

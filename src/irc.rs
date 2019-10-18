@@ -4,7 +4,7 @@ use fnv::FnvHashMap;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while, take_while1, take_while_m_n};
 use nom::character::complete::{alpha1, char};
-use nom::combinator::{opt, verify};
+use nom::combinator::{opt, recognize, verify};
 use nom::multi::{many0, separated_list};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{AsChar, IResult};
@@ -14,7 +14,7 @@ use std::iter::FromIterator;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IrcMessage<T: PartialEq + Eq + Hash> {
-    pub tags: FnvHashMap<IrcTagKey<T>, Option<T>>,
+    pub tags: FnvHashMap<T, T>,
     pub prefix: Option<IrcPrefix<T>>,
     pub command: T,
     pub command_params: Vec<T>,
@@ -38,6 +38,12 @@ impl IrcMessage<&str> {
                 command_params,
             },
         ))
+    }
+}
+
+impl From<&IrcMessage<&str>> for IrcMessage<String> {
+    fn from(_: &IrcMessage<&str>) -> Self {
+        unimplemented!()
     }
 }
 
@@ -125,7 +131,7 @@ fn irc_prefix(input: &str) -> IResult<&str, IrcPrefix<&str>> {
 }
 
 /// Parse IRCv3 tags into a HashMap
-fn irc_tags(input: &str) -> IResult<&str, FnvHashMap<IrcTagKey<&str>, Option<&str>>> {
+fn irc_tags(input: &str) -> IResult<&str, FnvHashMap<&str, &str>> {
     let (remaining, list_opt) = opt(delimited(
         char('@'),
         separated_list(char(';'), irc_tag),
@@ -134,22 +140,35 @@ fn irc_tags(input: &str) -> IResult<&str, FnvHashMap<IrcTagKey<&str>, Option<&st
     Ok((
         remaining,
         match list_opt {
-            Some(list) => FnvHashMap::from_iter(list),
+            Some(list) => {
+                FnvHashMap::from_iter(list.into_iter().filter_map(|(k, v)| match (k, v) {
+                    (k, Some(v)) => Some((k, v)),
+                    (_, None) => None,
+                }))
+            }
             None => FnvHashMap::default(),
         },
     ))
 }
 
 /// Parse a single IRCv3 tag
-fn irc_tag(input: &str) -> IResult<&str, (IrcTagKey<&str>, Option<&str>)> {
+fn irc_tag(input: &str) -> IResult<&str, (&str, Option<&str>)> {
     let (remaining, (key, val)) = tuple((
-        irc_tag_key,
+        irc_tag_key_str,
         opt(preceded(
             char('='),
             opt(take_while1(|c: char| !" ;".contains(c))),
         )),
     ))(input)?;
     Ok((remaining, (key, val.and_then(identity))))
+}
+
+fn irc_tag_key_str(input: &str) -> IResult<&str, &str> {
+    recognize(tuple((
+        opt(char('+')),
+        opt(terminated(take_while1(|c| !"=/".contains(c)), char('/'))),
+        take_while1(|c: char| c.is_alphanumeric() || c == '-'),
+    )))(input)
 }
 
 /// Parse the key of an IRC tag

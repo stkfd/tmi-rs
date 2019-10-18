@@ -1,39 +1,42 @@
-use std::borrow::Cow;
+use crate::irc::IrcMessage;
+use std::borrow::{Borrow, Cow};
 use std::error::Error as ErrorTrait;
+use std::fmt::{Debug, Formatter};
 
 #[derive(Debug)]
-pub enum ErrorKind {
+pub enum Error {
     SendError,
-    MissingConfigValue,
-    WebsocketError,
-    EventParseError,
+    WebsocketError {
+        details: Cow<'static, str>,
+        source: tokio_tungstenite::tungstenite::Error,
+    },
+    EventParseError {
+        message: IrcMessage<String>,
+        details: Cow<'static, str>,
+    },
 }
 
-#[derive(Debug)]
-pub struct Error {
-    kind: ErrorKind,
-    details: Cow<'static, str>,
-    cause: Option<Box<dyn ErrorTrait>>,
-}
-
-impl Error {
-    pub fn new(kind: impl Into<ErrorKind>, details: impl Into<Cow<'static, str>>) -> Error {
-        Error {
-            kind: kind.into(),
-            details: details.into(),
-            cause: None,
+impl ErrorTrait for Error {
+    fn description(&self) -> &str {
+        match self {
+            Error::SendError => "Error in the send channel",
+            Error::WebsocketError {
+                details: message, ..
+            } => message.borrow(),
+            Error::EventParseError { details, .. } => details.borrow(),
         }
     }
 
-    pub fn with_cause(
-        kind: impl Into<ErrorKind>,
-        details: impl Into<Cow<'static, str>>,
-        cause: impl Into<Box<dyn ErrorTrait>>,
-    ) -> Error {
-        Error {
-            kind: kind.into(),
-            details: details.into(),
-            cause: Some(cause.into()),
+    fn cause(&self) -> Option<&dyn ErrorTrait> {
+        match self {
+            Error::WebsocketError { source, .. } => Some(source),
+            _ => None,
         }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        unimplemented!()
     }
 }

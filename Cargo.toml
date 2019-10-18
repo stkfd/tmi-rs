@@ -13,13 +13,11 @@ futures-util-preview = "0.3.0-alpha.19"
 tokio-io = "0.2.0-alpha.6"
 tokio-timer = "0.3.0-alpha.6"
 tokio-executor = "0.2.0-alpha.6"
-async-trait = "0.1.13"
+tokio-net = "0.2.0-alpha.6"
+tokio-tungstenite = { git = "https://github.com/dbcfd/tokio-tungstenite.git", rev = "3821e0952a3e42462e69af1ff5870d087c9ae2aa" }
 url = "2.1.0"
 nom = "5.0.1"
+broadcaster = { git = "https://github.com/cere42/broadcaster.git", features = ["default-channels"] }
 
 [lib]
 name = "tmi_rs"
-
-[dependencies.tokio-tungstenite]
-git = "https://github.com/dbcfd/tokio-tungstenite.git"
-branch = "tokio2"

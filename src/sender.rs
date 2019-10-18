@@ -1,8 +1,9 @@
 use crate::client_messages::{ClientMessage, Command};
-use crate::{Error, ErrorKind};
+use crate::Error;
 use tokio_tungstenite::tungstenite::Message;
 use futures::{SinkExt, StreamExt, Stream};
 
+#[derive(Clone)]
 pub struct TwitchChatSender<Sink> {
     pub(crate) ws: Sink
 }
@@ -17,14 +18,14 @@ impl<Sink> TwitchChatSender<Sink> where Sink: SinkExt<Message> + Unpin {
     pub async fn send(&mut self, message: ClientMessage<'_>) -> Result<(), Error> {
         self.ws.send(Message::from(format!("{}", message)))
             .await
-            .map_err(|_err| Error::new(ErrorKind::SendError, "Channel error while sending a message"))
+            .map_err(|_err| Error::SendError)
     }
 
     pub async fn send_all<'a>(&mut self, messages: impl Stream<Item=&'a ClientMessage<'a>> + Unpin) -> Result<(), Error>
     {
         self.ws.send_all(&mut messages.map(|message| Message::from(format!("{}", message))))
             .await
-            .map_err(|_err| Error::new(ErrorKind::SendError, "Channel error while sending a message"))
+            .map_err(|_err| Error::SendError)
     }
 
     pub async fn join(&mut self, channel: &str) -> Result<(), Error> {
