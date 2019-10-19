@@ -10,9 +10,11 @@ pub trait ToOwnedEvent {
     fn to_owned_event(&self) -> Self::Owned;
 }
 
-impl ToOwnedEvent for () {
-    type Owned = ();
-    fn to_owned_event(&self) -> Self::Owned {}
+impl<T: Copy> ToOwnedEvent for T {
+    type Owned = T;
+    fn to_owned_event(&self) -> Self::Owned {
+        *self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,16 +76,16 @@ where
 /// Welcome messages that Twitch sends after connection and logging
 /// in successfully
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConnectMessage<T: Debug + Clone + Eq> {
+pub struct ConnectMessageEvent<T: Debug + Clone + Eq> {
     pub command: T,
     pub params: Vec<T>,
 }
 
-impl<T: StringRef> ToOwnedEvent for ConnectMessage<T> {
-    type Owned = ConnectMessage<String>;
+impl<T: StringRef> ToOwnedEvent for ConnectMessageEvent<T> {
+    type Owned = ConnectMessageEvent<String>;
 
     fn to_owned_event(&self) -> Self::Owned {
-        ConnectMessage {
+        ConnectMessageEvent {
             command: self.command.ref_to_string(),
             params: self.params.iter().map(RefToString::ref_to_string).collect(),
         }
@@ -153,6 +155,76 @@ impl<T: StringRef> ToOwnedEvent for ChannelUserEvent<T> {
         }
     }
 }
+
+macro_rules! impl_inner_to_owned {
+    ($type:ident) => {
+        impl<T: StringRef> ToOwnedEvent for $type<T> {
+            type Owned = $type<String>;
+
+            fn to_owned_event(&self) -> Self::Owned {
+                $type(self.0.to_owned_event())
+            }
+        }
+    };
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct PrivMsgEvent<T: StringRef>(ChannelMessageEvent<T>);
+impl_inner_to_owned!(PrivMsgEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct JoinEvent<T: StringRef>(ChannelEvent<T>);
+impl_inner_to_owned!(JoinEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct EndOfNamesEvent<T: StringRef>(ChannelEvent<T>);
+impl_inner_to_owned!(EndOfNamesEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct PartEvent<T: StringRef>(ChannelEvent<T>);
+impl_inner_to_owned!(PartEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct ClearChatEvent<T: StringRef>(ChannelUserEvent<T>);
+impl_inner_to_owned!(ClearChatEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct ClearMsgEvent<T: StringRef>(ChannelMessageEvent<T>);
+impl_inner_to_owned!(ClearMsgEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct NoticeEvent<T: StringRef>(ChannelMessageEvent<T>);
+impl_inner_to_owned!(NoticeEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
+pub struct ReconnectEvent;
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct RoomStateEvent<T: StringRef>(ChannelEvent<T>);
+impl_inner_to_owned!(RoomStateEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct UserNoticeEvent<T: StringRef>(ChannelMessageEvent<T>);
+impl_inner_to_owned!(UserNoticeEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, From, Into)]
+pub struct UserStateEvent<T: StringRef>(ChannelEvent<T>);
+impl_inner_to_owned!(UserStateEvent);
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
+pub struct GlobalUserStateEvent;
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
+pub struct CloseEvent;
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
+pub struct PingEvent;
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
+pub struct PongEvent;
+
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
+pub struct UnknownEvent;
 
 /// NAMES list response data
 #[derive(Debug, Clone, PartialEq, Eq)]

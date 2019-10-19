@@ -10,7 +10,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{ClientConfig, Error, TwitchChatSender};
 use crate::data::client_messages::{Capability, ClientMessage};
-use crate::events::Event;
+use crate::events::{Event, CloseEvent};
 use crate::irc::IrcMessage;
 use std::convert::TryFrom;
 use std::borrow::Cow;
@@ -84,7 +84,7 @@ impl TwitchClient {
                                         Message::Close(close_frame) => {
                                             if let Some(close_frame) = close_frame { info!("Received close frame: {}", close_frame) }
                                             info!("Connection closed by the server.");
-                                            evt_sender.send(&Arc::new(Event::Close)).await.unwrap();
+                                            evt_sender.send(&Arc::new(CloseEvent.into())).await.unwrap();
                                             break;
                                         }
                                         Message::Ping(_payload) => debug!("< WS PING"),
@@ -107,7 +107,7 @@ impl TwitchClient {
                     }
                 }
             }
-            evt_sender.send(&Arc::new(Event::Close)).await.unwrap();
+            evt_sender.send(&Arc::new(CloseEvent.into())).await.unwrap();
         });
 
         let mut capabilities = Vec::new();
