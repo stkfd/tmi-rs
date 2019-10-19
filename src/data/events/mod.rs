@@ -8,30 +8,30 @@ use crate::{Error, StringRef};
 mod event_content;
 pub use event_content::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, From)]
 pub enum Event<T: StringRef> {
-    PrivMsg(EventContent<T, ChannelMessageEvent<T>>),
+    PrivMsg(EventContent<T, PrivMsgEvent<T>>),
     Whisper(EventContent<T, WhisperEvent<T>>),
-    Join(EventContent<T, ChannelEvent<T>>),
+    Join(EventContent<T, JoinEvent<T>>),
     Mode(EventContent<T, ModeChangeEvent<T>>),
     Names(EventContent<T, NamesListEvent<T>>),
-    EndOfNames(EventContent<T, ChannelEvent<T>>),
-    Part(EventContent<T, ChannelEvent<T>>),
-    ClearChat(EventContent<T, ChannelUserEvent<T>>),
-    ClearMsg(EventContent<T, ChannelMessageEvent<T>>),
+    EndOfNames(EventContent<T, EndOfNamesEvent<T>>),
+    Part(EventContent<T, PartEvent<T>>),
+    ClearChat(EventContent<T, ClearChatEvent<T>>),
+    ClearMsg(EventContent<T, ClearMsgEvent<T>>),
     Host(EventContent<T, HostEvent<T>>),
-    Notice(EventContent<T, ChannelMessageEvent<T>>),
-    Reconnect(EventContent<T, ()>),
-    RoomState(EventContent<T, ChannelEvent<T>>),
-    UserNotice(EventContent<T, ChannelMessageEvent<T>>),
-    UserState(EventContent<T, ChannelEvent<T>>),
+    Notice(EventContent<T, NoticeEvent<T>>),
+    Reconnect(EventContent<T, ReconnectEvent>),
+    RoomState(EventContent<T, RoomStateEvent<T>>),
+    UserNotice(EventContent<T, UserNoticeEvent<T>>),
+    UserState(EventContent<T, UserStateEvent<T>>),
     Capability(EventContent<T, CapabilityEvent<T>>),
-    ConnectMessage(EventContent<T, ConnectMessage<T>>),
-    GlobalUserState(EventContent<T, ()>),
-    Close,
-    Ping,
-    Pong,
-    Unknown,
+    ConnectMessage(EventContent<T, ConnectMessageEvent<T>>),
+    GlobalUserState(EventContent<T, GlobalUserStateEvent>),
+    Close(CloseEvent),
+    Ping(PingEvent),
+    Pong(PongEvent),
+    Unknown(UnknownEvent),
 }
 
 impl<T> From<&Event<T>> for Event<String>
@@ -58,10 +58,10 @@ where
             Event::Capability(inner) => Event::Capability(inner.to_owned_event()),
             Event::GlobalUserState(inner) => Event::GlobalUserState(inner.to_owned_event()),
             Event::Reconnect(inner) => Event::Reconnect(inner.to_owned_event()),
-            Event::Close => Event::Close,
-            Event::Ping => Event::Ping,
-            Event::Pong => Event::Pong,
-            Event::Unknown => Event::Unknown,
+            Event::Close(e) => Event::Close(*e),
+            Event::Ping(e) => Event::Ping(*e),
+            Event::Pong(e) => Event::Pong(*e),
+            Event::Unknown(e) => Event::Unknown(*e),
         }
     }
 }
@@ -85,45 +85,49 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
         Ok(match msg.command {
             "PRIVMSG" => {
                 check_parameter_count(2, &msg)?;
-                Event::PrivMsg(EventContent {
+                EventContent {
                     sender,
-                    event: ChannelMessageEvent {
+                    event: PrivMsgEvent::from(ChannelMessageEvent::<&str> {
                         channel: msg.param(0),
                         message: msg.param(1),
-                    },
+                    }),
                     tags: msg.tags,
-                })
+                }
+                .into()
             }
-            "WHISPER" => Event::Whisper(EventContent {
+            "WHISPER" => EventContent {
                 sender,
-                event: WhisperEvent {
+                event: WhisperEvent::<&str> {
                     recipient: msg.try_param(0)?,
                     message: msg.try_param(1)?,
                 },
                 tags: msg.tags,
-            }),
-            "JOIN" => Event::Join(EventContent {
+            }
+            .into(),
+            "JOIN" => EventContent {
                 sender,
-                event: ChannelEvent {
+                event: JoinEvent::from(ChannelEvent::<&str> {
                     channel: msg.try_param(0)?,
-                },
+                }),
                 tags: msg.tags,
-            }),
+            }
+            .into(),
             "MODE" => {
                 check_parameter_count(3, &msg)?;
-                Event::Mode(EventContent {
+                EventContent {
                     sender,
-                    event: ModeChangeEvent {
+                    event: ModeChangeEvent::<&str> {
                         channel: msg.param(0),
                         mode_change: msg.param(1),
                         user: msg.param(2),
                     },
                     tags: msg.tags,
-                })
+                }
+                .into()
             }
             RPL_NAMREPLY => {
                 check_parameter_count(4, &msg)?;
-                Event::Names(EventContent {
+                EventContent {
                     sender,
                     event: NamesListEvent::<&str> {
                         user: msg.param(0),
@@ -131,46 +135,51 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                         names: msg.param(3).split(' ').collect(),
                     },
                     tags: msg.tags,
-                })
+                }
+                .into()
             }
-            RPL_ENDOFNAMES => Event::EndOfNames(EventContent {
+            RPL_ENDOFNAMES => EventContent {
                 sender,
-                event: ChannelEvent {
+                event: EndOfNamesEvent::from(ChannelEvent::<&str> {
                     channel: msg.try_param(1)?,
-                },
+                }),
                 tags: msg.tags,
-            }),
-            "PART" => Event::Part(EventContent {
+            }
+            .into(),
+            "PART" => EventContent {
                 sender,
-                event: ChannelEvent {
+                event: PartEvent::from(ChannelEvent::<&str> {
                     channel: msg.try_param(0)?,
-                },
+                }),
                 tags: msg.tags,
-            }),
-            "CLEARCHAT" => Event::ClearChat(EventContent {
+            }
+            .into(),
+            "CLEARCHAT" => EventContent {
                 sender,
-                event: ChannelUserEvent {
+                event: ClearChatEvent::from(ChannelUserEvent::<&str> {
                     channel: msg.try_param(0)?,
                     user: msg.params().get(1).copied(),
-                },
+                }),
                 tags: msg.tags,
-            }),
+            }
+            .into(),
             "CLEARMSG" => {
                 check_parameter_count(2, &msg)?;
-                Event::ClearMsg(EventContent {
+                EventContent {
                     sender,
-                    event: ChannelMessageEvent {
+                    event: ClearMsgEvent::from(ChannelMessageEvent::<&str> {
                         channel: msg.try_param(0)?,
                         message: msg.try_param(1)?,
-                    },
+                    }),
                     tags: msg.tags,
-                })
+                }
+                .into()
             }
             "HOSTTARGET" => {
                 let host_parts: Vec<_> = msg.param(1).split(' ').collect();
-                Event::Host(EventContent {
+                EventContent {
                     sender,
-                    event: HostEvent {
+                    event: HostEvent::<&str> {
                         hosting_channel: msg.param(0),
                         target_channel: if host_parts[0] == "-" {
                             None
@@ -183,72 +192,81 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                             .and_then(|num| num.parse::<usize>().ok()),
                     },
                     tags: msg.tags,
-                })
+                }
+                .into()
             }
             "NOTICE" => {
                 check_parameter_count(2, &msg)?;
-                Event::Notice(EventContent {
+                EventContent {
                     sender,
-                    event: ChannelMessageEvent {
+                    event: NoticeEvent::from(ChannelMessageEvent::<&str> {
                         channel: msg.param(0),
                         message: msg.param(1),
-                    },
+                    }),
                     tags: msg.tags,
-                })
+                }
+                .into()
             }
-            "RECONNECT" => Event::Reconnect(EventContent {
+            "RECONNECT" => EventContent {
                 sender,
-                event: (),
+                event: ReconnectEvent,
                 tags: msg.tags,
-            }),
-            "ROOMSTATE" => Event::RoomState(EventContent {
+            }
+            .into(),
+            "ROOMSTATE" => EventContent {
                 sender,
-                event: ChannelEvent {
+                event: RoomStateEvent::from(ChannelEvent::<&str> {
                     channel: msg.try_param(0)?,
-                },
+                }),
                 tags: msg.tags,
-            }),
+            }
+            .into(),
             "USERNOTICE" => {
                 check_parameter_count(2, &msg)?;
-                Event::UserNotice(EventContent {
+                EventContent {
                     sender,
-                    event: ChannelMessageEvent {
+                    event: UserNoticeEvent::from(ChannelMessageEvent::<&str> {
                         channel: msg.param(0),
                         message: msg.param(1),
-                    },
+                    }),
                     tags: msg.tags,
-                })
+                }
+                .into()
             }
-            "USERSTATE" => Event::UserState(EventContent {
+            "USERSTATE" => EventContent {
                 sender,
-                event: ChannelEvent {
+                event: UserStateEvent::from(ChannelEvent::<&str> {
                     channel: msg.try_param(0)?,
-                },
+                }),
                 tags: msg.tags,
-            }),
-            "CAP" => Event::Capability(EventContent {
+            }
+            .into(),
+            "CAP" => EventContent {
                 sender,
                 event: CapabilityEvent {
                     params: msg.params().to_vec(),
                 },
                 tags: msg.tags,
-            }),
+            }
+            .into(),
             RPL_WELCOME | RPL_YOURHOST | RPL_CREATED | RPL_MYINFO | RPL_MOTDSTART | RPL_MOTD
-            | RPL_ENDOFMOTD => Event::ConnectMessage(EventContent {
+            | RPL_ENDOFMOTD => EventContent {
                 sender,
-                event: ConnectMessage {
+                event: ConnectMessageEvent {
                     command: msg.command,
                     params: msg.params().to_vec(),
                 },
                 tags: msg.tags,
-            }),
-            "GLOBALUSERSTATE" => Event::GlobalUserState(EventContent {
+            }
+            .into(),
+            "GLOBALUSERSTATE" => EventContent {
                 sender,
-                event: (),
+                event: GlobalUserStateEvent,
                 tags: msg.tags,
-            }),
-            "PING" => Event::Ping,
-            "PONG" => Event::Pong,
+            }
+            .into(),
+            "PING" => PingEvent.into(),
+            "PONG" => PongEvent.into(),
             _ => return Err(Error::UnknownIrcCommand((&msg).into())),
         })
     }
@@ -264,7 +282,7 @@ fn test_join() {
         event,
         Event::Join(EventContent {
             sender: Some("ronni"),
-            event: ChannelEvent { channel: "#dallas" },
+            event: ChannelEvent { channel: "#dallas" }.into(),
             tags: None
         })
     )
@@ -333,7 +351,7 @@ fn test_names() {
             }),
             Event::EndOfNames(EventContent {
                 sender: None,
-                event: ChannelEvent { channel: "#dallas" },
+                event: ChannelEvent { channel: "#dallas" }.into(),
                 tags: None
             })
         ]
@@ -350,7 +368,7 @@ fn test_part() {
         event,
         Event::Part(EventContent {
             sender: Some("ronni"),
-            event: ChannelEvent { channel: "#dallas" },
+            event: ChannelEvent { channel: "#dallas" }.into(),
             tags: None
         })
     )
@@ -367,7 +385,8 @@ fn test_clearchat() {
             event: ChannelUserEvent {
                 channel: "#dallas",
                 user: Some("ronni")
-            },
+            }
+            .into(),
             tags: None
         })
     );
@@ -381,7 +400,8 @@ fn test_clearchat() {
             event: ChannelUserEvent {
                 channel: "#dallas",
                 user: None
-            },
+            }
+            .into(),
             tags: None
         })
     );
@@ -405,7 +425,8 @@ fn test_clearmsg() {
             event: ChannelMessageEvent {
                 channel: "#dallas",
                 message: "HeyGuys"
-            },
+            }
+            .into(),
             tags: Some(FnvHashMap::from_iter(
                 vec![("login", "ronni"), ("target-msg-id", "abc-123-def")].into_iter()
             ))
@@ -467,7 +488,8 @@ fn test_notice() {
             event: ChannelMessageEvent {
                 channel: "#dallas",
                 message: "This room is no longer in slow mode."
-            },
+            }
+            .into(),
             tags: Some(FnvHashMap::from_iter(
                 vec![("msg-id", "slow_off")].into_iter()
             ))
@@ -488,7 +510,7 @@ fn test_roomstate() {
         Event::try_from(msg).unwrap(),
         Event::RoomState(EventContent {
             sender: None,
-            event: ChannelEvent { channel: "#dallas" },
+            event: ChannelEvent { channel: "#dallas" }.into(),
             tags: Some(FnvHashMap::from_iter(
                 vec![
                     ("emote-only", "0"),
@@ -516,7 +538,8 @@ fn test_usernotice() {
             event: ChannelMessageEvent {
                 channel: "#<channel>",
                 message: "<message>"
-            },
+            }
+            .into(),
             tags: None
         })
     )
@@ -531,7 +554,7 @@ fn test_userstate() {
         Event::try_from(msg).unwrap(),
         Event::UserState(EventContent {
             sender: None,
-            event: ChannelEvent { channel: "#dallas" },
+            event: ChannelEvent { channel: "#dallas" }.into(),
             tags: None
         })
     )
