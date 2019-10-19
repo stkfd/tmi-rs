@@ -1,5 +1,7 @@
 //! Parser for twitch flavored IRC
 
+use crate::util::RefToString;
+use crate::{Error, StringRef};
 use fnv::FnvHashMap;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while, take_while1, take_while_m_n};
@@ -13,8 +15,8 @@ use std::hash::Hash;
 use std::iter::FromIterator;
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct IrcMessage<T: PartialEq + Eq + Hash> {
-    pub tags: FnvHashMap<T, T>,
+pub struct IrcMessage<T: StringRef> {
+    pub tags: Option<FnvHashMap<T, T>>,
     pub prefix: Option<IrcPrefix<T>>,
     pub command: T,
     pub command_params: Vec<T>,
@@ -41,9 +43,63 @@ impl IrcMessage<&str> {
     }
 }
 
-impl From<&IrcMessage<&str>> for IrcMessage<String> {
-    fn from(_: &IrcMessage<&str>) -> Self {
-        unimplemented!()
+impl<T> IrcMessage<T>
+where
+    T: StringRef,
+{
+    /// Get a reference to a command parameter by index, fails with an error
+    /// if the parameter is not found
+    #[inline]
+    pub fn try_param(&self, index: usize) -> Result<&T, Error> {
+        self.command_params
+            .get(index)
+            .ok_or_else(|| Error::MissingIrcCommandParameter(index, self.into()))
+    }
+
+    /// Get a reference to a command parameter by index, panics if not set
+    #[inline]
+    pub fn param(&self, index: usize) -> &T {
+        self.command_params.get(index).unwrap()
+    }
+
+    /// Get a slice of all command parameters
+    #[inline]
+    pub fn params(&self) -> &[T] {
+        self.command_params.as_ref()
+    }
+
+    /// Get the name of the message sender from the IRC prefix, can be either the user
+    /// or the nickname field depending on which one is set. For Twitch they should both
+    /// be the same if both are given
+    pub fn sender(&self) -> Option<&T> {
+        self.prefix.as_ref().and_then(|p| p.user_or_nick())
+    }
+
+    /// Get the host part of the message, usually <user>.tmi.twitch.tv
+    pub fn host(&self) -> Option<&T> {
+        self.prefix.as_ref().and_then(|p| p.host.as_ref())
+    }
+}
+
+impl<T> From<&IrcMessage<T>> for IrcMessage<String>
+where
+    T: StringRef,
+{
+    fn from(from: &IrcMessage<T>) -> Self {
+        IrcMessage {
+            tags: from.tags.as_ref().map(|tags| {
+                tags.iter()
+                    .map(|(k, v)| (k.ref_to_string(), v.ref_to_string()))
+                    .collect()
+            }),
+            prefix: from.prefix.as_ref().map(|p| p.into()),
+            command: from.command.ref_to_string(),
+            command_params: from
+                .command_params
+                .iter()
+                .map(RefToString::ref_to_string)
+                .collect(),
+        }
     }
 }
 
@@ -62,16 +118,33 @@ impl<'a, T: AsRef<str> + 'a> From<&'a T> for IrcTagKey<&'a str> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IrcPrefix<T> {
-    pub host: T,
+    pub host: Option<T>,
     pub nick: Option<T>,
     pub user: Option<T>,
 }
 
-impl<T: Eq + PartialEq + Hash> IrcPrefix<T> {
+impl<T: StringRef> IrcPrefix<T> {
+    /// Try to get the user or nick from the prefix,
+    /// depending on which one is set
     pub fn user_or_nick(&self) -> Option<&T> {
-        self.user.as_ref().or(self.nick.as_ref())
+        self.user.as_ref().or_else(|| self.nick.as_ref())
     }
 }
+
+impl<T> From<&IrcPrefix<T>> for IrcPrefix<String>
+where
+    T: StringRef,
+{
+    fn from(source: &IrcPrefix<T>) -> Self {
+        IrcPrefix {
+            host: source.host.as_ref().map(RefToString::ref_to_string),
+            nick: source.nick.as_ref().map(RefToString::ref_to_string),
+            user: source.user.as_ref().map(RefToString::ref_to_string),
+        }
+    }
+}
+
+// ------------------------------ Parser functions ------------------------------
 
 /// Parse an IRC command name
 fn command(input: &str) -> IResult<&str, &str> {
@@ -114,24 +187,38 @@ fn irc_prefix(input: &str) -> IResult<&str, IrcPrefix<&str>> {
 
     Ok((
         remaining,
-        if host.is_some() {
-            IrcPrefix {
-                host: host.unwrap(),
-                user,
+        match (nick_or_server, user, host) {
+            (nick_or_server, None, None) => {
+                if nick_or_server.contains('.') {
+                    IrcPrefix {
+                        host: Some(nick_or_server),
+                        user: None,
+                        nick: None,
+                    }
+                } else {
+                    IrcPrefix {
+                        host: None,
+                        user: None,
+                        nick: Some(nick_or_server),
+                    }
+                }
+            }
+            (nick_or_server, opt_user, Some(host)) => IrcPrefix {
+                host: Some(host),
+                user: opt_user,
                 nick: Some(nick_or_server),
-            }
-        } else {
-            IrcPrefix {
-                host: nick_or_server,
-                user,
+            },
+            (nick_or_server, opt_user, None) => IrcPrefix {
+                host: Some(nick_or_server),
+                user: opt_user,
                 nick: None,
-            }
+            },
         },
     ))
 }
 
 /// Parse IRCv3 tags into a HashMap
-fn irc_tags(input: &str) -> IResult<&str, FnvHashMap<&str, &str>> {
+fn irc_tags(input: &str) -> IResult<&str, Option<FnvHashMap<&str, &str>>> {
     let (remaining, list_opt) = opt(delimited(
         char('@'),
         separated_list(char(';'), irc_tag),
@@ -140,13 +227,13 @@ fn irc_tags(input: &str) -> IResult<&str, FnvHashMap<&str, &str>> {
     Ok((
         remaining,
         match list_opt {
-            Some(list) => {
-                FnvHashMap::from_iter(list.into_iter().filter_map(|(k, v)| match (k, v) {
+            Some(list) => Some(FnvHashMap::from_iter(list.into_iter().filter_map(
+                |(k, v)| match (k, v) {
                     (k, Some(v)) => Some((k, v)),
                     (_, None) => None,
-                }))
-            }
-            None => FnvHashMap::default(),
+                },
+            ))),
+            None => None,
         },
     ))
 }
@@ -204,16 +291,16 @@ fn spaces0(input: &str) -> IResult<&str, &str> {
 }
 
 // ------------------------------ TESTS ------------------------------
-// -------------------------------------------------------------------
 
 #[test]
 fn test_irc_tags() {
     let tag_str = "@tag-name-1=<tag-value-1>;tag-name-2=<tag-value-2>;empty-tag=";
     let (remaining, map) = irc_tags(tag_str).unwrap();
+    let map = map.unwrap();
     assert_eq!(remaining.len(), 0);
-    assert_eq!(map[&IrcTagKey::from(&"tag-name-1")], Some("<tag-value-1>"));
-    assert_eq!(map[&IrcTagKey::from(&"tag-name-2")], Some("<tag-value-2>"));
-    assert_eq!(map[&IrcTagKey::from(&"empty-tag")], None);
+    assert_eq!(map["tag-name-1"], "<tag-value-1>");
+    assert_eq!(map["tag-name-2"], "<tag-value-2>");
+    assert_eq!(map.contains_key("empty-tag"), false);
 }
 
 #[test]
@@ -255,4 +342,41 @@ fn test_welcome_message() {
 fn test_message() {
     let msg = "@badge-info=;badges=;color=#5F9EA0;display-name=SomeUser;emotes=;flags=;id=7be7b0d9-ba18-4f7c-acb5-439dad989d41;mod=0;room-id=22484632;subscriber=0;tmi-sent-ts=1570895688837;turbo=0;user-id=427147774;user-type= :someusername!someusername@someusername.tmi.twitch.tv PRIVMSG #forsen :FeelsDankMan";
     println!("{:#?}", IrcMessage::parse(msg).unwrap());
+}
+
+#[test]
+fn test_irc_prefix() {
+    assert_eq!(
+        irc_prefix(":jtv ").unwrap(),
+        (
+            "",
+            IrcPrefix {
+                host: None,
+                nick: Some("jtv"),
+                user: None
+            }
+        )
+    );
+    assert_eq!(
+        irc_prefix(":tmi.twitch.tv ").unwrap(),
+        (
+            "",
+            IrcPrefix {
+                host: Some("tmi.twitch.tv"),
+                nick: None,
+                user: None
+            }
+        )
+    );
+    assert_eq!(
+        irc_prefix(":nick!user@user.tmi.twitch.tv ").unwrap(),
+        (
+            "",
+            IrcPrefix {
+                host: Some("user.tmi.twitch.tv"),
+                nick: Some("nick"),
+                user: Some("user")
+            }
+        )
+    );
 }

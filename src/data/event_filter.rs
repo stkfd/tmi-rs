@@ -1,10 +1,9 @@
-use crate::events::{Event, EventContent};
-use std::fmt::Debug;
-use std::hash::Hash;
+use crate::events::Event;
+use crate::StringRef;
 
-pub fn channel_message<T: Clone + Debug + Eq + Hash>(evt: &Event<T>) -> bool {
-    match evt.event() {
-        EventContent::PrivMsg(_) => true,
+pub fn channel_message<T: StringRef>(evt: &Event<T>) -> bool {
+    match evt {
+        Event::PrivMsg(_) => true,
         _ => false,
     }
 }

@@ -33,7 +33,7 @@ impl<Sink> TwitchChatSender<Sink> where Sink: SinkExt<Message> + Unpin {
     }
 
     pub async fn login(&mut self, username: &str, token: &str) -> Result<(), Error> {
-        self.send_all(futures::stream::iter([ClientMessage::Pass(token), ClientMessage::Nick(username)].into_iter())).await
+        self.send_all(futures::stream::iter([ClientMessage::Pass(token), ClientMessage::Nick(username)].iter())).await
     }
 
     pub async fn ban(&mut self, channel: &str, username: &str) -> Result<(), Error> {

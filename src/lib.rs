@@ -14,6 +14,7 @@ mod errors;
 mod irc;
 mod irc_constants;
 mod sender;
+mod util;
 
 pub use futures;
 

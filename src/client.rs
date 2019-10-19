@@ -84,7 +84,7 @@ impl TwitchClient {
                                         Message::Close(close_frame) => {
                                             if let Some(close_frame) = close_frame { info!("Received close frame: {}", close_frame) }
                                             info!("Connection closed by the server.");
-                                            evt_sender.send(&Arc::new(Event::close())).await.unwrap();
+                                            evt_sender.send(&Arc::new(Event::Close)).await.unwrap();
                                             break;
                                         }
                                         Message::Ping(_payload) => debug!("< WS PING"),
@@ -107,7 +107,7 @@ impl TwitchClient {
                     }
                 }
             }
-            evt_sender.send(&Arc::new(Event::close())).await.unwrap();
+            evt_sender.send(&Arc::new(Event::Close)).await.unwrap();
         });
 
         let mut capabilities = Vec::new();
