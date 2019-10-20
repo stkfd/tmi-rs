@@ -5,8 +5,8 @@ use crate::irc::IrcMessage;
 use crate::irc_constants::replies::*;
 use crate::{Error, StringRef};
 
-mod event_content;
-pub use event_content::*;
+mod event_types;
+pub use event_types::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, From)]
 pub enum Event<T: StringRef> {
