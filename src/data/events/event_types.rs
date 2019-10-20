@@ -1,6 +1,8 @@
+use crate::events::Event;
 use crate::util::RefToString;
-use crate::StringRef;
+use crate::{Error, StringRef};
 use fnv::FnvHashMap;
+use std::borrow::Borrow;
 use std::fmt::Debug;
 
 /// Converts events from references into owned versions of themselves
@@ -33,6 +35,7 @@ impl<T, Inner> EventContent<T, Inner>
 where
     T: StringRef,
     Inner: Debug + Clone + Eq,
+    Event<T>: From<EventContent<T, Inner>>,
 {
     /// Get the sender of the message
     pub fn sender(&self) -> &Option<T> {
@@ -47,6 +50,20 @@ where
     /// Get the map of all IRCv3 tags
     pub fn tags(&self) -> &Option<FnvHashMap<T, T>> {
         &self.tags
+    }
+
+    /// Get a tag value from the message by its key
+    pub fn tag<Q: Borrow<str>>(&self, key: Q) -> Option<&T> {
+        self.tags.as_ref().and_then(|tags| tags.get(key.borrow()))
+    }
+
+    /// Gets a tag value, returns an Error if the value is not set. Intended for use in
+    /// internal tag accessor functions where the tag should always be available
+    pub(crate) fn required_tag<Q: Borrow<str>>(&self, key: Q) -> Result<&T, Error> {
+        self.tag(key.borrow()).ok_or_else(|| Error::MissingTag {
+            tag: key.borrow().to_string().into(),
+            event: (&Event::<T>::from(self.clone())).into(),
+        })
     }
 }
 
@@ -66,7 +83,7 @@ where
             tags: self.tags.as_ref().map(|hash_map| {
                 hash_map
                     .iter()
-                    .map(|(key, val)| (key.ref_to_string(), val.as_ref().ref_to_string()))
+                    .map(|(key, val)| (key.ref_to_string(), val.ref_to_string()))
                     .collect::<FnvHashMap<String, String>>()
             }),
         }
@@ -113,6 +130,29 @@ pub struct ChannelMessageEvent<T: StringRef> {
     pub message: T,
 }
 
+pub trait ChannelMessageData<T> {
+    /// Get the channel this message was sent from
+    fn channel(&self) -> &T;
+    /// Get the message
+    fn message(&self) -> &T;
+}
+
+impl<T, U> ChannelMessageData<T> for EventContent<T, U>
+where
+    T: StringRef,
+    U: Debug + Clone + Eq + AsRef<ChannelMessageEvent<T>>,
+{
+    #[inline]
+    fn channel(&self) -> &T {
+        &self.event.as_ref().channel
+    }
+
+    #[inline]
+    fn message(&self) -> &T {
+        &self.event.as_ref().message
+    }
+}
+
 impl<T: StringRef> ToOwnedEvent for ChannelMessageEvent<T> {
     type Owned = ChannelMessageEvent<String>;
 
@@ -157,7 +197,7 @@ impl<T: StringRef> ToOwnedEvent for ChannelUserEvent<T> {
 }
 
 macro_rules! impl_inner_to_owned {
-    ($type:ident) => {
+    ($type:ident, $inner:ident) => {
         impl<T: StringRef> ToOwnedEvent for $type<T> {
             type Owned = $type<String>;
 
@@ -165,51 +205,69 @@ macro_rules! impl_inner_to_owned {
                 $type(self.0.to_owned_event())
             }
         }
+
+        impl<'a, T: StringRef> AsRef<$inner<T>> for $type<T> {
+            fn as_ref(&self) -> &$inner<T> {
+                &self.0
+            }
+        }
     };
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct PrivMsgEvent<T: StringRef>(ChannelMessageEvent<T>);
-impl_inner_to_owned!(PrivMsgEvent);
+impl_inner_to_owned!(PrivMsgEvent, ChannelMessageEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct JoinEvent<T: StringRef>(ChannelEvent<T>);
-impl_inner_to_owned!(JoinEvent);
+impl_inner_to_owned!(JoinEvent, ChannelEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct EndOfNamesEvent<T: StringRef>(ChannelEvent<T>);
-impl_inner_to_owned!(EndOfNamesEvent);
+impl_inner_to_owned!(EndOfNamesEvent, ChannelEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct PartEvent<T: StringRef>(ChannelEvent<T>);
-impl_inner_to_owned!(PartEvent);
+impl_inner_to_owned!(PartEvent, ChannelEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct ClearChatEvent<T: StringRef>(ChannelUserEvent<T>);
-impl_inner_to_owned!(ClearChatEvent);
+impl_inner_to_owned!(ClearChatEvent, ChannelUserEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct ClearMsgEvent<T: StringRef>(ChannelMessageEvent<T>);
-impl_inner_to_owned!(ClearMsgEvent);
+impl_inner_to_owned!(ClearMsgEvent, ChannelMessageEvent);
+
+impl<T: StringRef> EventContent<T, ClearMsgEvent<T>> {
+    #[inline]
+    pub fn target_msg_id(&self) -> Result<&T, Error> {
+        self.required_tag("target-msg-id")
+    }
+
+    #[inline]
+    pub fn login(&self) -> Result<&T, Error> {
+        self.required_tag("login")
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct NoticeEvent<T: StringRef>(ChannelMessageEvent<T>);
-impl_inner_to_owned!(NoticeEvent);
+impl_inner_to_owned!(NoticeEvent, ChannelMessageEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub struct ReconnectEvent;
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct RoomStateEvent<T: StringRef>(ChannelEvent<T>);
-impl_inner_to_owned!(RoomStateEvent);
+impl_inner_to_owned!(RoomStateEvent, ChannelEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct UserNoticeEvent<T: StringRef>(ChannelMessageEvent<T>);
-impl_inner_to_owned!(UserNoticeEvent);
+impl_inner_to_owned!(UserNoticeEvent, ChannelMessageEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct UserStateEvent<T: StringRef>(ChannelEvent<T>);
-impl_inner_to_owned!(UserStateEvent);
+impl_inner_to_owned!(UserStateEvent, ChannelEvent);
 
 #[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub struct GlobalUserStateEvent;

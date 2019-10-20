@@ -1,3 +1,4 @@
+use crate::events::Event;
 use crate::irc::IrcMessage;
 use std::borrow::{Borrow, Cow};
 use std::error::Error as ErrorTrait;
@@ -13,16 +14,21 @@ pub enum Error {
     MissingIrcCommandParameter(usize, IrcMessage<String>),
     WrongIrcParameterCount(usize, IrcMessage<String>),
     UnknownIrcCommand(IrcMessage<String>),
+    MissingTag {
+        tag: Cow<'static, str>,
+        event: Event<String>,
+    },
 }
 
 impl ErrorTrait for Error {
     fn description(&self) -> &str {
         match self {
             Error::SendError => "Error in the send channel",
-            Error::WebsocketError {
-                details: message, ..
-            } => message.borrow(),
-            _ => unimplemented!(), // TODO
+            Error::WebsocketError { details, .. } => details.borrow(),
+            Error::MissingIrcCommandParameter(_, _) => "Missing IRC command parameter",
+            Error::WrongIrcParameterCount(_, _) => "Incorrect number of IRC command parameters",
+            Error::UnknownIrcCommand(_) => "Unknown IRC command",
+            Error::MissingTag { .. } => "Missing message tag",
         }
     }
 
@@ -58,6 +64,11 @@ impl std::fmt::Display for Error {
             Error::UnknownIrcCommand(msg) => {
                 write!(f, "Received unknown IRC command in message {:?}", msg)
             }
+            Error::MissingTag { tag, event } => write!(
+                f,
+                "Message did not contain expected tag \"{}\". Message:\n{:?}",
+                tag, event
+            ),
         }
     }
 }

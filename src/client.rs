@@ -46,7 +46,7 @@ impl TwitchClient {
 
         // Broadcast
         let evt_channel = BroadcastChannel::new();
-        let evt_sender = evt_channel.clone();
+        let incoming_handler = IncomingHandler(evt_channel.clone());
 
         tokio_executor::spawn(async move {
             loop {
@@ -65,30 +65,10 @@ impl TwitchClient {
                         match either2 {
                             Either::Left((next_in, _)) => {
                                 match next_in {
-                                    Some(Ok(next_in)) => match next_in {
-                                        Message::Text(msg) => {
-                                            debug!("< {}", msg);
-                                            match IrcMessage::<&str>::parse_many(&msg) {
-                                                Ok((_remaining, messages)) => {
-                                                    for irc_msg in messages {
-                                                        let owned_event: Event<String> = (&Event::try_from(irc_msg).unwrap()).into();
-                                                        evt_sender.send(&Arc::new(owned_event)).await.unwrap();
-                                                    }
-                                                }
-                                                Err(err) => {
-                                                    error!("IRC parse error: {:?}", err);
-                                                }
-                                            }
-                                        }
-                                        Message::Binary(msg) => info!("< Binary<{} bytes>", msg.len()),
-                                        Message::Close(close_frame) => {
-                                            if let Some(close_frame) = close_frame { info!("Received close frame: {}", close_frame) }
-                                            info!("Connection closed by the server.");
-                                            evt_sender.send(&Arc::new(CloseEvent.into())).await.unwrap();
+                                    Some(Ok(next_in)) => {
+                                        if !incoming_handler.handle(next_in).await.unwrap() {
                                             break;
                                         }
-                                        Message::Ping(_payload) => debug!("< WS PING"),
-                                        Message::Pong(_payload) => debug!("< WS PONG"),
                                     },
                                     Some(Err(e)) => {
                                         error!("{}", e);
@@ -107,7 +87,7 @@ impl TwitchClient {
                     }
                 }
             }
-            evt_sender.send(&Arc::new(CloseEvent.into())).await.unwrap();
+            incoming_handler.close().await.unwrap();
         });
 
         let mut capabilities = Vec::new();
@@ -121,9 +101,41 @@ impl TwitchClient {
     }
 }
 
-/*async fn match_channel_msg<T>(item: &Event<T>) -> bool {
-    match item.event() {
-        EventContent::PrivMsg(channel_msg) => true,
-        _ => false
+pub struct IncomingHandler(BroadcastChannel<Arc<Event<String>>>);
+
+impl IncomingHandler {
+    async fn handle(&self, msg: Message) -> Result<bool, Error> {
+        let sender = &self.0;
+        match msg {
+            Message::Text(msg) => {
+                debug!("< {}", msg);
+                match IrcMessage::<&str>::parse_many(&msg) {
+                    Ok((_remaining, messages)) => {
+                        for irc_msg in messages {
+                            let owned_event: Event<String> = (&Event::try_from(irc_msg)?).into();
+                            sender.send(&Arc::new(owned_event)).await.unwrap();
+                        }
+                    }
+                    Err(err) => {
+                        error!("IRC parse error: {:?}", err);
+                    }
+                }
+            }
+            Message::Binary(msg) => info!("< Binary<{} bytes>", msg.len()),
+            Message::Close(close_frame) => {
+                if let Some(close_frame) = close_frame { info!("Received close frame: {}", close_frame) }
+                info!("Connection closed by the server.");
+                sender.send(&Arc::new(CloseEvent.into())).await.unwrap();
+                return Ok(false)
+            }
+            Message::Ping(_payload) => debug!("< WS PING"),
+            Message::Pong(_payload) => debug!("< WS PONG"),
+        }
+        Ok(true)
     }
-}*/
+
+    async fn close(&self) -> Result<(), Error> {
+        (&self.0).send(&Arc::new(CloseEvent.into())).await.unwrap();
+        Ok(())
+    }
+}
