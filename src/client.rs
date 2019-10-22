@@ -13,7 +13,7 @@ use url::Url;
 /// Holds the configuration for a twitch chat client. Call `connect` to establish a connection using it.
 #[derive(Debug, Clone, Builder)]
 pub struct TwitchClient {
-    /// The chat server, by default wss://irc-ws.chat.twitch.tv:443
+    /// The chat server, by default `wss://irc-ws.chat.twitch.tv:443`
     #[builder(default = r#"Url::parse("wss://irc-ws.chat.twitch.tv:443").unwrap()"#)]
     pub url: Url,
 
@@ -37,7 +37,7 @@ pub struct TwitchClient {
 }
 
 impl TwitchClient {
-    /// Connects to the Twitch servers and listens in a separate thread. Await the returned future
+    /// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
     /// to block until the connection is closed.
     pub async fn connect(&self) -> Result<TwitchChatConnection<WebSocketStream<tokio_tungstenite::stream::Stream<TcpStream, TlsStream<TcpStream>>>>, Error>
     {

@@ -21,7 +21,6 @@ use crate::Error;
 
 type EventBuffer = SmallVec<[Result<Event<String>, Error>; 10]>;
 
-/// Stream for the [`parse_irc`](self::StreamExtensions::parse_irc) method.
 #[must_use = "streams do nothing unless polled"]
 pub struct TwitchChatStream<St> {
     stream: St,
