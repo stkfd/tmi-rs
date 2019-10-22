@@ -1,8 +1,9 @@
-use crate::events::Event;
-use crate::irc::IrcMessage;
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::error::Error as ErrorTrait;
 use std::fmt::{Debug, Formatter};
+
+use crate::events::Event;
+use crate::irc::IrcMessage;
 
 #[derive(Debug)]
 pub enum Error {
@@ -18,23 +19,15 @@ pub enum Error {
         tag: Cow<'static, str>,
         event: Event<String>,
     },
+    MessageChannelError(futures::channel::mpsc::SendError),
+    IrcParseError(String),
 }
 
 impl ErrorTrait for Error {
-    fn description(&self) -> &str {
-        match self {
-            Error::SendError => "Error in the send channel",
-            Error::WebsocketError { details, .. } => details.borrow(),
-            Error::MissingIrcCommandParameter(_, _) => "Missing IRC command parameter",
-            Error::WrongIrcParameterCount(_, _) => "Incorrect number of IRC command parameters",
-            Error::UnknownIrcCommand(_) => "Unknown IRC command",
-            Error::MissingTag { .. } => "Missing message tag",
-        }
-    }
-
     fn cause(&self) -> Option<&dyn ErrorTrait> {
         match self {
             Error::WebsocketError { source, .. } => Some(source),
+            Error::MessageChannelError(source) => Some(source),
             _ => None,
         }
     }
@@ -69,6 +62,12 @@ impl std::fmt::Display for Error {
                 "Message did not contain expected tag \"{}\". Message:\n{:?}",
                 tag, event
             ),
+            Error::MessageChannelError(source) => write!(
+                f,
+                "The internal message channel returned an error: {}",
+                source
+            ),
+            Error::IrcParseError(source) => write!(f, "IRC parse error:\n{}", source),
         }
     }
 }

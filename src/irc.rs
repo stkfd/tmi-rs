@@ -1,7 +1,9 @@
 //! Parser for twitch flavored IRC
 
-use crate::util::RefToString;
-use crate::{Error, StringRef};
+use std::convert::identity;
+use std::hash::Hash;
+use std::iter::FromIterator;
+
 use fnv::FnvHashMap;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while, take_while1, take_while_m_n};
@@ -10,9 +12,9 @@ use nom::combinator::{opt, recognize, verify};
 use nom::multi::{many0, separated_list};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{AsChar, IResult};
-use std::convert::identity;
-use std::hash::Hash;
-use std::iter::FromIterator;
+
+use crate::util::RefToString;
+use crate::{Error, StringRef};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IrcMessage<T: StringRef> {

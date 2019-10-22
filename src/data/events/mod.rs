@@ -1,12 +1,15 @@
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
+pub use event_types::*;
+pub use stream::*;
+
 use crate::irc::IrcMessage;
 use crate::irc_constants::replies::*;
 use crate::{Error, StringRef};
 
 mod event_types;
-pub use event_types::*;
+mod stream;
 
 #[derive(Debug, Clone, PartialEq, Eq, From)]
 pub enum Event<T: StringRef> {

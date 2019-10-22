@@ -11,14 +11,17 @@ derive_builder = "0.8.0"
 derive_more = "0.15.0"
 futures-preview = "0.3.0-alpha.19"
 futures-util-preview = "0.3.0-alpha.19"
+pin-utils = "0.1.0-alpha.4"
 tokio-io = "0.2.0-alpha.6"
 tokio-timer = "0.3.0-alpha.6"
 tokio-executor = "0.2.0-alpha.6"
 tokio-net = "0.2.0-alpha.6"
-tokio-tungstenite = { git = "https://github.com/dbcfd/tokio-tungstenite.git", rev = "3821e0952a3e42462e69af1ff5870d087c9ae2aa" }
+tokio-tls = "0.3.0-alpha.6"
+tokio-tungstenite = { git = "https://github.com/dbcfd/tokio-tungstenite.git", branch = "tokio2", features=["connect", "tls"] }
+broadcaster = { git = "https://github.com/cere42/broadcaster.git", features = ["default-channels"] }
 url = "2.1.0"
 nom = "5.0.1"
-broadcaster = { git = "https://github.com/cere42/broadcaster.git", features = ["default-channels"] }
+smallvec = "0.6.10"
 
 [lib]
 name = "tmi_rs"

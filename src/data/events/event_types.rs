@@ -1,9 +1,11 @@
+use std::borrow::Borrow;
+use std::fmt::Debug;
+
+use fnv::FnvHashMap;
+
 use crate::events::Event;
 use crate::util::RefToString;
 use crate::{Error, StringRef};
-use fnv::FnvHashMap;
-use std::borrow::Borrow;
-use std::fmt::Debug;
 
 /// Converts events from references into owned versions of themselves
 pub trait ToOwnedEvent {
