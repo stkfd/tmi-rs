@@ -5,9 +5,7 @@ extern crate log;
 
 use std::env;
 use std::error::Error;
-use tmi_rs::{TwitchClientBuilder, TwitchClient};
-use tmi_rs::futures::StreamExt;
-
+use tmi_rs::{TwitchClientBuilder, TwitchClient, futures::StreamExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
