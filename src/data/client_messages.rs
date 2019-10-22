@@ -1,25 +1,22 @@
 //! Types to represent messages sent by the client
 
+use std::borrow::Borrow;
 use std::fmt;
 
+use crate::StringRef;
+
 /// Messages to be sent from the client to twitch servers
-pub enum ClientMessage<'a> {
-    PrivMsg {
-        channel: &'a str,
-        message: &'a str,
-    },
-    Command {
-        channel: &'a str,
-        command: Command<'a>,
-    },
-    Join(&'a str),
-    Part(&'a str),
-    Nick(&'a str),
-    Pass(&'a str),
-    CapRequest(&'a [Capability]),
+pub enum ClientMessage<T: Borrow<str>> {
+    PrivMsg { channel: T, message: T },
+    Command { channel: T, command: Command<T> },
+    Join(T),
+    Part(T),
+    Nick(T),
+    Pass(T),
+    CapRequest(Vec<Capability>),
 }
 
-impl<'a> fmt::Display for ClientMessage<'a> {
+impl<T: StringRef> fmt::Display for ClientMessage<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
             ClientMessage::PrivMsg { channel, message } => {
@@ -45,36 +42,36 @@ impl<'a> fmt::Display for ClientMessage<'a> {
 }
 
 /// Available twitch chat commands (/timeout etc)
-pub enum Command<'a> {
-    Ban(&'a str),
-    Unban(&'a str),
+pub enum Command<T: Borrow<str>> {
+    Ban(T),
+    Unban(T),
     Clear,
-    Color(&'a str),
+    Color(T),
     Commercial { time: Option<usize> },
-    Delete { msg_id: &'a str },
+    Delete { msg_id: T },
     Disconnect,
     EmoteOnly(bool),
     FollowersOnly(bool),
-    Host(&'a str),
+    Host(T),
     Unhost,
-    Marker(Option<&'a str>),
+    Marker(Option<T>),
     Me,
-    Mod(&'a str),
-    Unmod(&'a str),
+    Mod(T),
+    Unmod(T),
     Mods,
     R9k(bool),
-    Raid(&'a str),
+    Raid(T),
     Unraid,
     Slow(usize),
     SlowOff,
     SubscribersOnly(bool),
-    Timeout { user: &'a str, time: Option<usize> },
-    Vip(&'a str),
+    Timeout { user: T, time: Option<usize> },
+    Vip(T),
     Vips,
-    Whisper { user: &'a str, message: &'a str },
+    Whisper { user: T, message: T },
 }
 
-impl<'a> fmt::Display for &Command<'a> {
+impl<T: StringRef> fmt::Display for &Command<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
             Command::Ban(user) => write!(f, "/ban {}", user),
