@@ -13,16 +13,13 @@ extern crate pin_utils;
 #[macro_use]
 extern crate smallvec;
 
-pub use futures;
-
-pub use config::*;
-pub use config::*;
+pub use client::*;
 pub use data::*;
 pub use errors::*;
+pub use futures;
 pub use sender::*;
 
 pub mod client;
-mod config;
 mod data;
 mod errors;
 mod irc;

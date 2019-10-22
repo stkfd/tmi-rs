@@ -10,11 +10,6 @@ pub struct TwitchChatConnection<Ws> {
     inner_stream: TwitchChatStream<Ws>
 }
 
-//pub trait TwitchChatStream: Stream<Item=Result<Event<&str>, Error>> + Unpin {}
-//impl<T> TwitchChatStream for T {}
-//pub trait TwitchChatSink: Sink<ClientMessage<&str>, Error = Error> + Unpin {}
-//impl<T> TwitchChatSink for T {}
-
 impl<Ws> TwitchChatConnection<Ws>
     where
         Ws: Stream<Item=Result<Message, WsError>> + Unpin + Sink<Message>
