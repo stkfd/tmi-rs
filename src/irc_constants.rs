@@ -1,3 +1,4 @@
+#[allow(dead_code, missing_docs)]
 pub mod replies {
     pub const RPL_WELCOME: &str = "001";
     pub const RPL_YOURHOST: &str = "002";
