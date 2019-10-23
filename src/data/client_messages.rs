@@ -6,9 +6,9 @@ use std::fmt;
 use crate::StringRef;
 
 /// Messages to be sent from the client to twitch servers
+#[allow(missing_docs)]
 pub enum ClientMessage<T: Borrow<str>> {
     PrivMsg { channel: T, message: T },
-    Command { channel: T, command: Command<T> },
     Join(T),
     Part(T),
     Nick(T),
@@ -34,14 +34,12 @@ impl<T: StringRef> fmt::Display for ClientMessage<T> {
             ),
             ClientMessage::Nick(nick) => write!(f, "NICK {}", nick),
             ClientMessage::Pass(pass) => write!(f, "PASS {}", pass),
-            ClientMessage::Command { channel, command } => {
-                write!(f, "PRIVMSG #{} :{}", channel, command)
-            }
         }
     }
 }
 
 /// Available twitch chat commands (/timeout etc)
+#[allow(missing_docs)]
 pub enum Command<T: Borrow<str>> {
     Ban(T),
     Unban(T),
@@ -55,7 +53,7 @@ pub enum Command<T: Borrow<str>> {
     Host(T),
     Unhost,
     Marker(Option<T>),
-    Me,
+    Me(T),
     Mod(T),
     Unmod(T),
     Mods,
@@ -71,7 +69,7 @@ pub enum Command<T: Borrow<str>> {
     Whisper { user: T, message: T },
 }
 
-impl<T: StringRef> fmt::Display for &Command<T> {
+impl<T: StringRef> fmt::Display for Command<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
             Command::Ban(user) => write!(f, "/ban {}", user),
@@ -110,7 +108,7 @@ impl<T: StringRef> fmt::Display for &Command<T> {
                     write!(f, "/marker")
                 }
             }
-            Command::Me => write!(f, "/me"),
+            Command::Me(msg) => write!(f, "/me {}", msg),
             Command::Mod(user) => write!(f, "/mod {}", user),
             Command::Unmod(user) => write!(f, "/unmod {}", user),
             Command::Mods => write!(f, "/mods"),
@@ -148,8 +146,11 @@ impl<T: StringRef> fmt::Display for &Command<T> {
 
 /// Twitch client capabilities
 pub enum Capability {
+    /// twitch.tv/membership capability
     Membership,
+    /// twitch.tv/tags tags capability
     Tags,
+    /// twitch.tv/commands capability
     Commands,
 }
 

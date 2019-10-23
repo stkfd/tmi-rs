@@ -1,7 +1,8 @@
 //! A WebSocket based, asynchronous Twitch chat client.
 //!
 //! # Example
-//! ```rust
+//! ```no_run
+//! #![feature(async_closure)]
 //! #[macro_use]
 //! extern crate log;
 //!
@@ -51,6 +52,6 @@ pub mod client;
 mod data;
 mod errors;
 mod irc;
-mod irc_constants;
+pub mod irc_constants;
 mod sender;
 mod util;

@@ -21,6 +21,8 @@ use crate::Error;
 
 type EventBuffer = SmallVec<[Result<Event<String>, Error>; 10]>;
 
+/// A wrapper around the websocket stream that parses incoming IRC messages into event structs
+/// and formats Message or Command structs as IRC messages.
 #[must_use = "streams do nothing unless polled"]
 pub struct TwitchChatStream<St> {
     stream: St,
