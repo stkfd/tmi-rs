@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .build()?;
     let mut connection = client.connect().await?;
 
-    connection.join("forsen").await?;
+    connection.join("zapbeeblebrox123").await?;
     connection.stream_mut().by_ref().for_each(async move |event| {
         info!("{:?}", event);
     }).await;

@@ -1,3 +1,40 @@
+//! Convenience methods to access the IRCv3 tags twitch sends. It's possible to access the
+//! tag values using their names with the [`MessageTags<T>`](self::MessageTags) trait. However, there
+//! are accessor methods for all documented tags which are only implemented for the event types where
+//! they are expected to be set. Additionally, some of the methods parse the tags and return more
+//! easily processed structs instead of the raw string values
+//! (see [`EmoteTag::emotes()`](trait.EmoteTag.html#method.emotes)),
+//! [`EmoteSetsTag::emote_sets()`](trait.EmoteSetsTag.html#method.emote_sets)).
+//!
+//! # Examples
+//!
+//! ```
+//! # use tmi_rs::irc::IrcMessage;
+//! # use std::convert::TryInto;
+//! use tmi_rs::event::{tags::UserDisplayTags, Event};
+//! # let msg = "@badge-info=;badges=global_mod/1,turbo/1;color=#0D4200;display-name=ronni;emotes=25:0-4,12-16/1902:6-10;id=b34ccfc7-4977-403a-8a94-33c6bac34fb8;mod=0;room-id=1337;subscriber=0;tmi-sent-ts=1507246572675;turbo=1;user-id=1337;user-type=global_mod :ronni!ronni@ronni.tmi.twitch.tv PRIVMSG #ronni :Kappa Keepo Kappa";
+//! # let parsed_message: Event<&str> = IrcMessage::parse(msg).unwrap().1.try_into().unwrap();
+//!
+//! if let Event::PrivMsg(event) = parsed_message {
+//!     println!("{:?}", event.color()); // Some("#0D4200")
+//! }
+//! ```
+//!
+//! Using the tag specific methods acts as a compile-time guard against trying to access tags on events
+//! where they are never defined:
+//!
+//! ```compile_fail
+//! use tmi_rs::event::Event;
+//! use tmi_rs::event::tags::ClearChatTags;
+//! # let msg = "@badge-info=;badges=global_mod/1,turbo/1;color=#0D4200;display-name=ronni;emotes=25:0-4,12-16/1902:6-10;id=b34ccfc7-4977-403a-8a94-33c6bac34fb8;mod=0;room-id=1337;subscriber=0;tmi-sent-ts=1507246572675;turbo=1;user-id=1337;user-type=global_mod :ronni!ronni@ronni.tmi.twitch.tv PRIVMSG #ronni :Kappa Keepo Kappa";
+//! # let parsed_message: Event<&str> = IrcMessage::parse(msg).unwrap().1.try_into().unwrap();
+//!
+//! if let Event::PrivMsg(event) = parsed_message {
+//!     // only implemented for ClearChat events, won't compile
+//!     println!("{:?}", event.ban_duration());
+//! }
+//! ```
+
 use std::borrow::Borrow;
 use std::str::FromStr;
 
@@ -7,22 +44,24 @@ use nom::multi::{separated_list, separated_nonempty_list};
 use nom::sequence::{separated_pair, tuple};
 use nom::IResult;
 
-use crate::event::data::{
+use crate::event::inner_data::{
     Badge, ClearChatEvent, ClearMsgEvent, GlobalUserStateEvent, PrivMsgEvent, RoomStateEvent,
     UserNoticeEvent, UserStateEvent,
 };
-use crate::event::EventData;
+use crate::event::{EventData, WhisperEvent};
 use crate::{Error, StringRef};
 
+/// Access methods for individual IRC tags by their string tag keys
 pub trait MessageTags<T> {
-    /// Get the map of all IRCv3 tags
+    /// Get the map of all IRCv3 tags.
     fn tags(&self) -> &Option<FnvHashMap<T, T>>;
 
-    /// Get a tag value from the message by its key
+    /// Get a tag value from the message by its key. `None` for tags that are not present
+    /// as well as tags that are set but empty.
     fn tag<Q: Borrow<str>>(&self, key: Q) -> Option<&T>;
 
-    /// Gets a tag value, returns an Error if the value is not set. Intended for use in
-    /// internal tag accessor functions where the tag should always be available
+    /// Gets a tag value, returns an Error if the value is not set or empty. Intended for use in
+    /// cases where the tag should always be available.
     fn required_tag<Q: Borrow<str>>(&self, key: Q) -> Result<&T, Error>;
 }
 
@@ -81,6 +120,7 @@ impl<T: StringRef> BadgeTags<T> for EventData<T, GlobalUserStateEvent> {}
 impl<T: StringRef> BadgeTags<T> for EventData<T, PrivMsgEvent<T>> {}
 impl<T: StringRef> BadgeTags<T> for EventData<T, UserNoticeEvent<T>> {}
 impl<T: StringRef> BadgeTags<T> for EventData<T, UserStateEvent<T>> {}
+impl<T: StringRef> BadgeTags<T> for EventData<T, WhisperEvent<T>> {}
 
 /// Access to `color` and `display-name` tags
 pub trait UserDisplayTags<T: StringRef>: MessageTags<T> {
@@ -100,10 +140,12 @@ impl<T: StringRef> UserDisplayTags<T> for EventData<T, GlobalUserStateEvent> {}
 impl<T: StringRef> UserDisplayTags<T> for EventData<T, PrivMsgEvent<T>> {}
 impl<T: StringRef> UserDisplayTags<T> for EventData<T, UserNoticeEvent<T>> {}
 impl<T: StringRef> UserDisplayTags<T> for EventData<T, UserStateEvent<T>> {}
+impl<T: StringRef> UserDisplayTags<T> for EventData<T, WhisperEvent<T>> {}
 
 /// Access to the `emote-sets` tag
 pub trait EmoteSetsTag<T: StringRef>: MessageTags<T> {
-    /// `emote-sets` tag
+    /// `emote-sets` tag, returned as a Vec of integers. If the tag is missing, an empty Vec
+    /// is returned.
     fn emote_sets(&self) -> Result<Vec<usize>, Error> {
         if let Some(tag_content) = self.tag("emote-sets") {
             tag_content
@@ -133,6 +175,7 @@ pub trait UserIdTag<T: StringRef>: MessageTags<T> {
 impl<T: StringRef> UserIdTag<T> for EventData<T, GlobalUserStateEvent> {}
 impl<T: StringRef> UserIdTag<T> for EventData<T, UserNoticeEvent<T>> {}
 impl<T: StringRef> UserIdTag<T> for EventData<T, PrivMsgEvent<T>> {}
+impl<T: StringRef> UserIdTag<T> for EventData<T, WhisperEvent<T>> {}
 
 /// Access to `mod` tag
 pub trait ModTag<T: StringRef>: MessageTags<T> {
@@ -159,9 +202,28 @@ pub trait BitsTag<T: StringRef>: MessageTags<T> {
 }
 impl<T: StringRef> BitsTag<T> for EventData<T, PrivMsgEvent<T>> {}
 
-/// Tags that apply to both PRIVMSG and USERNOTICE.
-pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
+pub trait EmotesTag<T: StringRef>: MessageTags<T> {
     /// `emotes` tag
+    ///
+    /// # Examples
+    /// ```
+    /// # use tmi_rs::irc::IrcMessage;
+    /// # use std::convert::TryInto;
+    /// use tmi_rs::event::{Event, tags::{EmotesTag, EmoteReplacement}};
+    /// # let msg = "@display-name=ronni;emotes=25:0-4,12-16/1902:6-10 :ronni!ronni@ronni.tmi.twitch.tv PRIVMSG #ronni :Kappa Keepo Kappa";
+    /// # let parsed: Event<&str> = IrcMessage::parse(msg).unwrap().1.try_into().unwrap();
+    /// // `parsed` is some `Event<&str>` message with the emote tag emotes=25:0-4,12-16/1902:6-10
+    /// if let Event::PrivMsg(event) = &parsed {
+    ///     assert_eq!(event.emotes().unwrap(), vec![
+    ///         EmoteReplacement { emote_id: 25, indices: vec![(0, 4), (12, 16)] },
+    ///         EmoteReplacement { emote_id: 1902, indices: vec![(6, 10)] }
+    ///     ])
+    /// }
+    /// # assert!(match &parsed {
+    /// #     Event::PrivMsg(event) => true,
+    /// #     _ => false
+    /// # });
+    /// ```
     #[inline]
     fn emotes(&self) -> Result<Vec<EmoteReplacement>, Error> {
         self.tag("emotes").map_or_else(
@@ -169,7 +231,13 @@ pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
             |emotes_str| parse_emotes(emotes_str.borrow()),
         )
     }
+}
+impl<T: StringRef> EmotesTag<T> for EventData<T, PrivMsgEvent<T>> {}
+impl<T: StringRef> EmotesTag<T> for EventData<T, UserNoticeEvent<T>> {}
+impl<T: StringRef> EmotesTag<T> for EventData<T, WhisperEvent<T>> {}
 
+/// Tags that apply to both PRIVMSG and USERNOTICE.
+pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
     /// `id` tag
     #[inline]
     fn id(&self) -> Result<&T, Error> {
@@ -192,6 +260,7 @@ pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
 impl<T: StringRef> UserMessageTags<T> for EventData<T, PrivMsgEvent<T>> {}
 impl<T: StringRef> UserMessageTags<T> for EventData<T, UserNoticeEvent<T>> {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmoteReplacement {
     pub emote_id: usize,
     pub indices: Vec<(usize, usize)>,
@@ -272,6 +341,23 @@ pub trait RoomStateTags<T: StringRef>: MessageTags<T> {
     }
 }
 impl<T: StringRef> RoomStateTags<T> for EventData<T, RoomStateEvent<T>> {}
+
+pub trait WhisperTags<T: StringRef>: MessageTags<T> {
+    /// `message-id` tag for whispers, identifies messages within conversations.
+    fn message_id(&self) -> Result<usize, Error> {
+        self.required_tag("message-id").and_then(|tag| {
+            usize::from_str(tag.borrow()).map_err(|_| {
+                Error::TagParseError("message-id".to_string(), tag.borrow().to_string())
+            })
+        })
+    }
+
+    /// `thread-id` tag for whispers, to identify conversations.
+    fn thread_id(&self) -> Result<&T, Error> {
+        self.required_tag("thread-id")
+    }
+}
+impl<T: StringRef> WhisperTags<T> for EventData<T, WhisperEvent<T>> {}
 
 fn parse_badges<'a>(input: &'a str, tag_name: &str) -> Result<Vec<Badge<&'a str>>, Error> {
     separated_list(char(','), parse_badge)(input)
