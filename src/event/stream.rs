@@ -15,7 +15,7 @@ use tokio_tungstenite::tungstenite::Message;
 use futures_sink::Sink;
 
 use crate::client_messages::ClientMessage;
-use crate::events::{CloseEvent, Event};
+use crate::event::{CloseEvent, Event};
 use crate::irc::IrcMessage;
 use crate::Error;
 

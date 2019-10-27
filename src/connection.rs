@@ -1,11 +1,12 @@
-use futures::{SinkExt, Stream, Sink};
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::tungstenite::Error as WsError;
-
-use crate::Error;
-use crate::client_messages::{ClientMessage, Command};
-use crate::events::TwitchChatStream;
 use std::borrow::Borrow;
+
+use futures::{Sink, SinkExt, Stream};
+use tokio_tungstenite::tungstenite::Error as WsError;
+use tokio_tungstenite::tungstenite::Message;
+
+use crate::client_messages::{ClientMessage, Command};
+use crate::Error;
+use crate::event::stream::TwitchChatStream;
 
 pub struct TwitchChatConnection<Ws> {
     inner_stream: TwitchChatStream<Ws>

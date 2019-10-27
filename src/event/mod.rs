@@ -1,39 +1,45 @@
 //! Data types and parsing logic for events that can be received
 //! from the twitch servers.
 
-use std::convert::TryFrom;
+use std::borrow::Borrow;
+use std::convert::{Into, TryFrom};
 use std::fmt::Debug;
 
-pub use event_types::*;
-pub use stream::*;
+use fnv::FnvHashMap;
 
+use data::*;
+
+use crate::event::tags::MessageTags;
 use crate::irc::IrcMessage;
 use crate::irc_constants::replies::*;
+use crate::util::RefToString;
 use crate::{Error, StringRef};
 
-mod event_types;
-mod stream;
+pub mod data;
+pub mod stream;
+pub mod tags;
 
+/// Enum containing all event types that can be received from Twitch
 #[derive(Debug, Clone, PartialEq, Eq, From)]
 pub enum Event<T: StringRef> {
-    PrivMsg(EventContent<T, PrivMsgEvent<T>>),
-    Whisper(EventContent<T, WhisperEvent<T>>),
-    Join(EventContent<T, JoinEvent<T>>),
-    Mode(EventContent<T, ModeChangeEvent<T>>),
-    Names(EventContent<T, NamesListEvent<T>>),
-    EndOfNames(EventContent<T, EndOfNamesEvent<T>>),
-    Part(EventContent<T, PartEvent<T>>),
-    ClearChat(EventContent<T, ClearChatEvent<T>>),
-    ClearMsg(EventContent<T, ClearMsgEvent<T>>),
-    Host(EventContent<T, HostEvent<T>>),
-    Notice(EventContent<T, NoticeEvent<T>>),
-    Reconnect(EventContent<T, ReconnectEvent>),
-    RoomState(EventContent<T, RoomStateEvent<T>>),
-    UserNotice(EventContent<T, UserNoticeEvent<T>>),
-    UserState(EventContent<T, UserStateEvent<T>>),
-    Capability(EventContent<T, CapabilityEvent<T>>),
-    ConnectMessage(EventContent<T, ConnectMessageEvent<T>>),
-    GlobalUserState(EventContent<T, GlobalUserStateEvent>),
+    PrivMsg(EventData<T, PrivMsgEvent<T>>),
+    Whisper(EventData<T, WhisperEvent<T>>),
+    Join(EventData<T, JoinEvent<T>>),
+    Mode(EventData<T, ModeChangeEvent<T>>),
+    Names(EventData<T, NamesListEvent<T>>),
+    EndOfNames(EventData<T, EndOfNamesEvent<T>>),
+    Part(EventData<T, PartEvent<T>>),
+    ClearChat(EventData<T, ClearChatEvent<T>>),
+    ClearMsg(EventData<T, ClearMsgEvent<T>>),
+    Host(EventData<T, HostEvent<T>>),
+    Notice(EventData<T, NoticeEvent<T>>),
+    Reconnect(EventData<T, ReconnectEvent>),
+    RoomState(EventData<T, RoomStateEvent<T>>),
+    UserNotice(EventData<T, UserNoticeEvent<T>>),
+    UserState(EventData<T, UserStateEvent<T>>),
+    Capability(EventData<T, CapabilityEvent<T>>),
+    ConnectMessage(EventData<T, ConnectMessageEvent<T>>),
+    GlobalUserState(EventData<T, GlobalUserStateEvent>),
     Close(CloseEvent),
     Ping(PingEvent),
     Pong(PongEvent),
@@ -91,7 +97,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
         Ok(match msg.command {
             "PRIVMSG" => {
                 check_parameter_count(2, &msg)?;
-                EventContent {
+                EventData {
                     sender,
                     event: PrivMsgEvent::from(ChannelMessageEvent::new(
                         *msg.param(0),
@@ -101,7 +107,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                 }
                 .into()
             }
-            "WHISPER" => EventContent {
+            "WHISPER" => EventData {
                 sender,
                 event: WhisperEvent::<&str> {
                     recipient: msg.try_param(0)?,
@@ -110,7 +116,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                 tags: msg.tags,
             }
             .into(),
-            "JOIN" => EventContent {
+            "JOIN" => EventData {
                 sender,
                 event: JoinEvent::from(ChannelEvent::<&str>::new(msg.try_param(0)?)),
                 tags: msg.tags,
@@ -118,7 +124,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             .into(),
             "MODE" => {
                 check_parameter_count(3, &msg)?;
-                EventContent {
+                EventData {
                     sender,
                     event: ModeChangeEvent::<&str> {
                         channel: msg.param(0),
@@ -131,7 +137,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             }
             RPL_NAMREPLY => {
                 check_parameter_count(4, &msg)?;
-                EventContent {
+                EventData {
                     sender,
                     event: NamesListEvent::<&str> {
                         user: msg.param(0),
@@ -142,19 +148,19 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                 }
                 .into()
             }
-            RPL_ENDOFNAMES => EventContent {
+            RPL_ENDOFNAMES => EventData {
                 sender,
                 event: EndOfNamesEvent::from(ChannelEvent::<&str>::new(msg.try_param(1)?)),
                 tags: msg.tags,
             }
             .into(),
-            "PART" => EventContent {
+            "PART" => EventData {
                 sender,
                 event: PartEvent::from(ChannelEvent::<&str>::new(msg.try_param(0)?)),
                 tags: msg.tags,
             }
             .into(),
-            "CLEARCHAT" => EventContent {
+            "CLEARCHAT" => EventData {
                 sender,
                 event: ClearChatEvent::from(ChannelUserEvent::<&str>::new(
                     msg.try_param(0)?,
@@ -165,7 +171,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             .into(),
             "CLEARMSG" => {
                 check_parameter_count(2, &msg)?;
-                EventContent {
+                EventData {
                     sender,
                     event: ClearMsgEvent::from(ChannelMessageEvent::new(
                         *msg.try_param(0)?,
@@ -177,7 +183,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             }
             "HOSTTARGET" => {
                 let host_parts: Vec<_> = msg.param(1).split(' ').collect();
-                EventContent {
+                EventData {
                     sender,
                     event: HostEvent::<&str> {
                         hosting_channel: msg.param(0),
@@ -197,7 +203,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             }
             "NOTICE" => {
                 check_parameter_count(2, &msg)?;
-                EventContent {
+                EventData {
                     sender,
                     event: NoticeEvent::from(ChannelMessageEvent::<&str>::new(
                         msg.param(0),
@@ -207,13 +213,13 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                 }
                 .into()
             }
-            "RECONNECT" => EventContent {
+            "RECONNECT" => EventData {
                 sender,
                 event: ReconnectEvent,
                 tags: msg.tags,
             }
             .into(),
-            "ROOMSTATE" => EventContent {
+            "ROOMSTATE" => EventData {
                 sender,
                 event: RoomStateEvent::from(ChannelEvent::<&str>::new(msg.try_param(0)?)),
                 tags: msg.tags,
@@ -221,7 +227,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             .into(),
             "USERNOTICE" => {
                 check_parameter_count(2, &msg)?;
-                EventContent {
+                EventData {
                     sender,
                     event: UserNoticeEvent::from(ChannelMessageEvent::<&str>::new(
                         msg.param(0),
@@ -231,13 +237,13 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                 }
                 .into()
             }
-            "USERSTATE" => EventContent {
+            "USERSTATE" => EventData {
                 sender,
                 event: UserStateEvent::from(ChannelEvent::<&str>::new(msg.try_param(0)?)),
                 tags: msg.tags,
             }
             .into(),
-            "CAP" => EventContent {
+            "CAP" => EventData {
                 sender,
                 event: CapabilityEvent {
                     params: msg.params().to_vec(),
@@ -246,7 +252,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             }
             .into(),
             RPL_WELCOME | RPL_YOURHOST | RPL_CREATED | RPL_MYINFO | RPL_MOTDSTART | RPL_MOTD
-            | RPL_ENDOFMOTD => EventContent {
+            | RPL_ENDOFMOTD => EventData {
                 sender,
                 event: ConnectMessageEvent {
                     command: msg.command,
@@ -255,7 +261,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                 tags: msg.tags,
             }
             .into(),
-            "GLOBALUSERSTATE" => EventContent {
+            "GLOBALUSERSTATE" => EventData {
                 sender,
                 event: GlobalUserStateEvent,
                 tags: msg.tags,
@@ -268,6 +274,107 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
     }
 }
 
+/// Converts from events with inner reference types into owned versions
+pub trait ToOwnedEvent {
+    /// Owned version of the event type
+    type Owned;
+    /// Convert the event to its owned version
+    fn to_owned_event(&self) -> Self::Owned;
+}
+
+impl<T: Copy> ToOwnedEvent for T {
+    type Owned = T;
+    fn to_owned_event(&self) -> Self::Owned {
+        *self
+    }
+}
+
+/// Content of a received message. Contains the sender, tags and and a generic `Inner` which
+/// contains the data specific to each event type.
+///
+/// Helper functions to access the contained data (message, target, specific tags) are implemented
+/// for for the EventContent<T, Inner> types they apply to.  
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventData<T, Inner>
+where
+    T: StringRef,
+    Inner: Debug + Clone + Eq,
+{
+    /// Sender of the message, if applicable
+    pub(crate) sender: Option<T>,
+    /// Inner type specific event data
+    pub(crate) event: Inner,
+    /// Map of IRCv3 tags
+    pub(crate) tags: Option<FnvHashMap<T, T>>,
+}
+
+/// Methods common to all EventContent variants
+impl<T, Inner> EventData<T, Inner>
+where
+    T: StringRef,
+    Inner: Debug + Clone + Eq,
+    Event<T>: From<EventData<T, Inner>>,
+{
+    /// Get the sender of the message
+    pub fn sender(&self) -> &Option<T> {
+        &self.sender
+    }
+
+    /// Get the data of the inner event type
+    pub fn event(&self) -> &Inner {
+        &self.event
+    }
+}
+
+impl<T, Inner> MessageTags<T> for EventData<T, Inner>
+where
+    T: StringRef,
+    Inner: Clone + Debug + Eq,
+    Event<T>: From<EventData<T, Inner>>,
+{
+    /// Get the map of all IRCv3 tags
+    fn tags(&self) -> &Option<FnvHashMap<T, T>> {
+        &self.tags
+    }
+
+    /// Get a tag value from the message by its key
+    fn tag<Q: Borrow<str>>(&self, key: Q) -> Option<&T> {
+        self.tags.as_ref().and_then(|tags| tags.get(key.borrow()))
+    }
+
+    /// Gets a tag value, returns an Error if the value is not set. Intended for use in
+    /// internal tag accessor functions where the tag should always be available
+    fn required_tag<Q: Borrow<str>>(&self, key: Q) -> Result<&T, Error> {
+        self.tag(key.borrow()).ok_or_else(|| Error::MissingTag {
+            tag: key.borrow().to_string().into(),
+            event: (&Event::<T>::from(self.clone())).into(),
+        })
+    }
+}
+
+/// Generic ToOwned implementation for all EventContent variants
+impl<T, Inner> ToOwnedEvent for EventData<T, Inner>
+where
+    T: StringRef,
+    Inner: Debug + Clone + Eq + ToOwnedEvent,
+    Inner::Owned: Debug + Clone + Eq,
+{
+    type Owned = EventData<String, Inner::Owned>;
+
+    fn to_owned_event(&self) -> Self::Owned {
+        EventData {
+            sender: self.sender.as_ref().map(RefToString::ref_to_string),
+            event: self.event.to_owned_event(),
+            tags: self.tags.as_ref().map(|hash_map| {
+                hash_map
+                    .iter()
+                    .map(|(key, val)| (key.ref_to_string(), val.ref_to_string()))
+                    .collect::<FnvHashMap<String, String>>()
+            }),
+        }
+    }
+}
+
 #[test]
 fn test_join() {
     let (remaining, msg) =
@@ -276,7 +383,7 @@ fn test_join() {
     let event: Event<&str> = Event::try_from(msg).unwrap();
     assert_eq!(
         event,
-        Event::Join(EventContent {
+        Event::Join(EventData {
             sender: Some("ronni"),
             event: ChannelEvent::new("#dallas").into(),
             tags: None
@@ -291,7 +398,7 @@ fn test_mode() {
     let event: Event<&str> = Event::try_from(msg).unwrap();
     assert_eq!(
         event,
-        Event::Mode(EventContent {
+        Event::Mode(EventData {
             sender: Some("jtv"),
             event: ModeChangeEvent {
                 channel: "#dallas",
@@ -327,7 +434,7 @@ fn test_names() {
     assert_eq!(
         events,
         vec![
-            Event::Names(EventContent {
+            Event::Names(EventData {
                 sender: None,
                 event: NamesListEvent {
                     user: "ronni",
@@ -336,7 +443,7 @@ fn test_names() {
                 },
                 tags: None
             }),
-            Event::Names(EventContent {
+            Event::Names(EventData {
                 sender: None,
                 event: NamesListEvent {
                     user: "ronni",
@@ -345,7 +452,7 @@ fn test_names() {
                 },
                 tags: None
             }),
-            Event::EndOfNames(EventContent {
+            Event::EndOfNames(EventData {
                 sender: None,
                 event: ChannelEvent::new("#dallas").into(),
                 tags: None
@@ -362,7 +469,7 @@ fn test_part() {
     let event: Event<&str> = Event::try_from(msg).unwrap();
     assert_eq!(
         event,
-        Event::Part(EventContent {
+        Event::Part(EventData {
             sender: Some("ronni"),
             event: ChannelEvent::new("#dallas").into(),
             tags: None
@@ -376,7 +483,7 @@ fn test_clearchat() {
     assert_eq!(remaining, "");
     assert_eq!(
         Event::try_from(msg1).unwrap(),
-        Event::ClearChat(EventContent {
+        Event::ClearChat(EventData {
             sender: None,
             event: ChannelUserEvent::new("#dallas", Some("ronni")).into(),
             tags: None
@@ -387,7 +494,7 @@ fn test_clearchat() {
     assert_eq!(remaining, "");
     assert_eq!(
         Event::try_from(msg2).unwrap(),
-        Event::ClearChat(EventContent {
+        Event::ClearChat(EventData {
             sender: None,
             event: ChannelUserEvent::new("#dallas", None).into(),
             tags: None
@@ -408,7 +515,7 @@ fn test_clearmsg() {
     let event: Event<&str> = Event::try_from(msg).unwrap();
     assert_eq!(
         event,
-        Event::ClearMsg(EventContent {
+        Event::ClearMsg(EventData {
             sender: None,
             event: ChannelMessageEvent::new("#dallas", "HeyGuys").into(),
             tags: Some(FnvHashMap::from_iter(
@@ -425,7 +532,7 @@ fn test_host() {
     assert_eq!(remaining, "");
     assert_eq!(
         Event::try_from(msg).unwrap(),
-        Event::Host(EventContent {
+        Event::Host(EventData {
             sender: None,
             event: HostEvent {
                 hosting_channel: "#hosting_channel",
@@ -444,7 +551,7 @@ fn test_host_end() {
     assert_eq!(remaining, "");
     assert_eq!(
         Event::try_from(msg).unwrap(),
-        Event::Host(EventContent {
+        Event::Host(EventData {
             sender: None,
             event: HostEvent {
                 hosting_channel: "#hosting_channel",
@@ -467,7 +574,7 @@ fn test_notice() {
     assert_eq!(remaining, "");
     assert_eq!(
         Event::try_from(msg).unwrap(),
-        Event::Notice(EventContent {
+        Event::Notice(EventData {
             sender: None,
             event: ChannelMessageEvent::new("#dallas", "This room is no longer in slow mode.")
                 .into(),
@@ -489,7 +596,7 @@ fn test_roomstate() {
     assert_eq!(remaining, "");
     assert_eq!(
         Event::try_from(msg).unwrap(),
-        Event::RoomState(EventContent {
+        Event::RoomState(EventData {
             sender: None,
             event: ChannelEvent::new("#dallas").into(),
             tags: Some(FnvHashMap::from_iter(
@@ -514,7 +621,7 @@ fn test_usernotice() {
     assert_eq!(remaining, "");
     assert_eq!(
         Event::try_from(msg).unwrap(),
-        Event::UserNotice(EventContent {
+        Event::UserNotice(EventData {
             sender: None,
             event: ChannelMessageEvent::new("#<channel>", "<message>").into(),
             tags: None
@@ -529,7 +636,7 @@ fn test_userstate() {
     assert_eq!(remaining, "");
     assert_eq!(
         Event::try_from(msg).unwrap(),
-        Event::UserState(EventContent {
+        Event::UserState(EventData {
             sender: None,
             event: ChannelEvent::new("#dallas").into(),
             tags: None

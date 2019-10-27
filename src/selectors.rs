@@ -1,6 +1,6 @@
 //! Convenience functions for matching specific event types
 
-use crate::events::Event;
+use crate::event::Event;
 use crate::StringRef;
 
 /// Match any normal channel message

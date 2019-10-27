@@ -42,16 +42,27 @@ extern crate pin_utils;
 #[macro_use]
 extern crate smallvec;
 
-pub use client::*;
-pub use data::*;
-pub use errors::*;
+use std::borrow::Borrow;
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
+
 pub use futures;
-pub use sender::*;
+
+pub use client::*;
+pub use connection::*;
+pub use errors::*;
 
 pub mod client;
-mod data;
-mod errors;
-mod irc;
+pub mod client_messages;
+pub mod connection;
+pub mod errors;
+pub mod event;
+pub mod irc;
 pub mod irc_constants;
-mod sender;
-mod util;
+pub mod selectors;
+pub mod util;
+
+/// Trait that is used when generically referring to a &str, String, or other type that can be
+/// used just like a borrowed string
+pub trait StringRef: Borrow<str> + Debug + Clone + Hash + Eq + Display {}
+impl<T> StringRef for T where T: Borrow<str> + Debug + Clone + Hash + Eq + Display {}
