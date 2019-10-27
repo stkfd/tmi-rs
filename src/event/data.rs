@@ -1,101 +1,8 @@
-use std::borrow::Borrow;
 use std::fmt::Debug;
 
-use fnv::FnvHashMap;
-
-use crate::events::Event;
+use crate::event::{EventData, ToOwnedEvent};
 use crate::util::RefToString;
-use crate::{Error, StringRef};
-
-/// Converts from events with inner reference types into owned versions
-pub trait ToOwnedEvent {
-    /// Owned version of the event type
-    type Owned;
-    /// Convert the event to its owned version
-    fn to_owned_event(&self) -> Self::Owned;
-}
-
-impl<T: Copy> ToOwnedEvent for T {
-    type Owned = T;
-    fn to_owned_event(&self) -> Self::Owned {
-        *self
-    }
-}
-
-/// Content of a received message
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EventContent<T, Inner>
-where
-    T: StringRef,
-    Inner: Debug + Clone + Eq,
-{
-    /// Sender of the message, if applicable
-    pub(crate) sender: Option<T>,
-    /// Inner type specific event data
-    pub(crate) event: Inner,
-    /// Map of IRCv3 tags
-    pub(crate) tags: Option<FnvHashMap<T, T>>,
-}
-
-/// Methods common to all EventContent variants
-impl<T, Inner> EventContent<T, Inner>
-where
-    T: StringRef,
-    Inner: Debug + Clone + Eq,
-    Event<T>: From<EventContent<T, Inner>>,
-{
-    /// Get the sender of the message
-    pub fn sender(&self) -> &Option<T> {
-        &self.sender
-    }
-
-    /// Get the data of the inner event type
-    pub fn event(&self) -> &Inner {
-        &self.event
-    }
-
-    /// Get the map of all IRCv3 tags
-    pub fn tags(&self) -> &Option<FnvHashMap<T, T>> {
-        &self.tags
-    }
-
-    /// Get a tag value from the message by its key
-    pub fn tag<Q: Borrow<str>>(&self, key: Q) -> Option<&T> {
-        self.tags.as_ref().and_then(|tags| tags.get(key.borrow()))
-    }
-
-    /// Gets a tag value, returns an Error if the value is not set. Intended for use in
-    /// internal tag accessor functions where the tag should always be available
-    pub(crate) fn required_tag<Q: Borrow<str>>(&self, key: Q) -> Result<&T, Error> {
-        self.tag(key.borrow()).ok_or_else(|| Error::MissingTag {
-            tag: key.borrow().to_string().into(),
-            event: (&Event::<T>::from(self.clone())).into(),
-        })
-    }
-}
-
-/// Generic ToOwned implementation for all EventContent variants
-impl<T, Inner> ToOwnedEvent for EventContent<T, Inner>
-where
-    T: StringRef,
-    Inner: Debug + Clone + Eq + ToOwnedEvent,
-    Inner::Owned: Debug + Clone + Eq,
-{
-    type Owned = EventContent<String, Inner::Owned>;
-
-    fn to_owned_event(&self) -> Self::Owned {
-        EventContent {
-            sender: self.sender.as_ref().map(RefToString::ref_to_string),
-            event: self.event.to_owned_event(),
-            tags: self.tags.as_ref().map(|hash_map| {
-                hash_map
-                    .iter()
-                    .map(|(key, val)| (key.ref_to_string(), val.ref_to_string()))
-                    .collect::<FnvHashMap<String, String>>()
-            }),
-        }
-    }
-}
+use crate::StringRef;
 
 /// Welcome messages that Twitch sends after connection and logging
 /// in successfully.
@@ -109,10 +16,10 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectMessageEvent<T: Debug + Clone + Eq> {
     /// IRC command name, typically 3 digit numeric code
-    pub command: T,
+    pub(crate) command: T,
 
     /// IRC command params
-    pub params: Vec<T>,
+    pub(crate) params: Vec<T>,
 }
 
 impl<T: StringRef> ToOwnedEvent for ConnectMessageEvent<T> {
@@ -127,9 +34,25 @@ impl<T: StringRef> ToOwnedEvent for ConnectMessageEvent<T> {
 }
 
 /// Event containing just a username
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UserEvent<T: StringRef> {
     user: T,
+}
+
+pub trait UserEventData<T> {
+    /// Username contained in the message
+    fn user(&self) -> &T;
+}
+
+impl<T, Inner> UserEventData<T> for EventData<T, Inner>
+where
+    T: StringRef,
+    Inner: AsRef<UserEvent<T>> + Debug + Clone + Eq,
+{
+    /// Username contained in the message
+    fn user(&self) -> &T {
+        &self.event.as_ref().user
+    }
 }
 
 impl<T: StringRef> ToOwnedEvent for UserEvent<T> {
@@ -157,23 +80,25 @@ impl<T: StringRef> ChannelMessageEvent<T> {
 }
 
 /// Accessors for channel message event data
-pub trait ChannelMessageData<T> {
-    /// Get the channel this message was sent from
+pub trait ChannelMessageEventData<T> {
+    /// Channel name for the message
     fn channel(&self) -> &T;
-    /// Get the message
+    /// Actual message
     fn message(&self) -> &T;
 }
 
-impl<T, U> ChannelMessageData<T> for EventContent<T, U>
+impl<T, U> ChannelMessageEventData<T> for EventData<T, U>
 where
     T: StringRef,
     U: Debug + Clone + Eq + AsRef<ChannelMessageEvent<T>>,
 {
+    /// Get the channel this message was sent from
     #[inline]
     fn channel(&self) -> &T {
         &self.event.as_ref().channel
     }
 
+    /// Get the message
     #[inline]
     fn message(&self) -> &T {
         &self.event.as_ref().message
@@ -195,6 +120,23 @@ impl<T: StringRef> ToOwnedEvent for ChannelMessageEvent<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChannelEvent<T: StringRef> {
     channel: T,
+}
+
+/// Data accessor for channel events
+pub trait ChannelEventData<T> {
+    /// Channel name contained in the message
+    fn channel(&self) -> &T;
+}
+
+impl<T, Inner> ChannelEventData<T> for EventData<T, Inner>
+where
+    T: StringRef,
+    Inner: AsRef<ChannelEvent<T>> + Debug + Clone + Eq,
+{
+    #[inline]
+    fn channel(&self) -> &T {
+        &self.event.as_ref().channel
+    }
 }
 
 impl<T: StringRef> ChannelEvent<T> {
@@ -225,6 +167,28 @@ impl<T: StringRef> ChannelUserEvent<T> {
     /// Create a new event from strings
     pub fn new(channel: T, user: Option<T>) -> Self {
         ChannelUserEvent { channel, user }
+    }
+}
+
+/// Channel/user event data access
+pub trait ChannelUserEventData<T> {
+    /// Channel contained in the message
+    fn channel(&self) -> &T;
+    /// User contained in the message
+    fn user(&self) -> Option<&T>;
+}
+
+impl<T, Inner> ChannelUserEventData<T> for EventData<T, Inner>
+where
+    T: StringRef,
+    Inner: AsRef<ChannelUserEvent<T>> + Debug + Clone + Eq,
+{
+    fn channel(&self) -> &T {
+        &self.event.as_ref().channel
+    }
+
+    fn user(&self) -> Option<&T> {
+        self.event.as_ref().user.as_ref()
     }
 }
 
@@ -287,20 +251,6 @@ impl_inner_to_owned!(ClearChatEvent, ChannelUserEvent);
 pub struct ClearMsgEvent<T: StringRef>(ChannelMessageEvent<T>);
 impl_inner_to_owned!(ClearMsgEvent, ChannelMessageEvent);
 
-impl<T: StringRef> EventContent<T, ClearMsgEvent<T>> {
-    /// UUID of the message to be deleted
-    #[inline]
-    pub fn target_msg_id(&self) -> Result<&T, Error> {
-        self.required_tag("target-msg-id")
-    }
-
-    ///	Name of the user who sent the message
-    #[inline]
-    pub fn login(&self) -> Result<&T, Error> {
-        self.required_tag("login")
-    }
-}
-
 /// NOTICE event content
 #[derive(Debug, Clone, Eq, PartialEq, From, Into)]
 pub struct NoticeEvent<T: StringRef>(ChannelMessageEvent<T>);
@@ -329,6 +279,11 @@ impl_inner_to_owned!(UserStateEvent, ChannelEvent);
 #[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub struct GlobalUserStateEvent;
 
+pub struct Badge<T: StringRef> {
+    pub badge: T,
+    pub version: T,
+}
+
 /// Connection close event
 #[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub struct CloseEvent;
@@ -354,7 +309,7 @@ pub struct NamesListEvent<T: StringRef> {
 }
 
 /// Data accessors for NAMES events
-pub trait NamesData<T: StringRef> {
+pub trait NamesEventData<T: StringRef> {
     /// Current user
     fn user(&self) -> &T;
     /// Channel that the user list is for
@@ -363,7 +318,7 @@ pub trait NamesData<T: StringRef> {
     fn names(&self) -> &[T];
 }
 
-impl<T, U> NamesData<T> for EventContent<T, U>
+impl<T, U> NamesEventData<T> for EventData<T, U>
 where
     T: StringRef,
     U: Debug + Clone + Eq + AsRef<NamesListEvent<T>>,
@@ -408,23 +363,26 @@ pub trait ModeChangeData<T: StringRef> {
     /// Mode change, for example +o or -o
     fn mode_change(&self) -> &T;
     /// Affected user
-    fn user(&self) -> &[T];
+    fn user(&self) -> &T;
 }
 
-impl<T> EventContent<T, ModeChangeEvent<T>>
+impl<T> ModeChangeData<T> for EventData<T, ModeChangeEvent<T>>
 where
     T: StringRef,
 {
+    #[inline]
     fn channel(&self) -> &T {
-        &self.event.as_ref().channel
+        &self.event.channel
     }
 
+    #[inline]
     fn mode_change(&self) -> &T {
-        &self.event.as_ref().mode_change
+        &self.event.mode_change
     }
 
-    fn user(&self) -> &[T] {
-        &self.event.as_ref().user
+    #[inline]
+    fn user(&self) -> &T {
+        &self.event.user
     }
 }
 
@@ -458,12 +416,38 @@ impl<T: StringRef> ToOwnedEvent for WhisperEvent<T> {
     }
 }
 
+pub trait HostEventData<T> {
+    /// The hosting channel
+    fn hosting_channel(&self) -> &T;
+    /// The host target channel. `None` if hosting is ended
+    fn target_channel(&self) -> Option<&T>;
+    /// Number of viewers included in the host (optional)
+    fn viewer_count(&self) -> Option<usize>;
+}
+
 /// Host event data (hosting channel, target channel, viewers)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostEvent<T: StringRef> {
-    pub hosting_channel: T,
-    pub target_channel: Option<T>,
-    pub viewer_count: Option<usize>,
+    pub(crate) hosting_channel: T,
+    pub(crate) target_channel: Option<T>,
+    pub(crate) viewer_count: Option<usize>,
+}
+
+impl<T: StringRef> HostEventData<T> for EventData<T, HostEvent<T>> {
+    #[inline]
+    fn hosting_channel(&self) -> &T {
+        &self.event.hosting_channel
+    }
+
+    #[inline]
+    fn target_channel(&self) -> Option<&T> {
+        self.event.target_channel.as_ref()
+    }
+
+    #[inline]
+    fn viewer_count(&self) -> Option<usize> {
+        self.event.viewer_count
+    }
 }
 
 impl<T: StringRef> ToOwnedEvent for HostEvent<T> {

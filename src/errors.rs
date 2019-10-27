@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::error::Error as ErrorTrait;
 use std::fmt::{Debug, Formatter};
 
-use crate::events::Event;
+use crate::event::Event;
 use crate::irc::IrcMessage;
 
 #[derive(Debug)]
@@ -21,6 +21,7 @@ pub enum Error {
     },
     MessageChannelError(futures::channel::mpsc::SendError),
     IrcParseError(String),
+    TagParseError(String, String),
 }
 
 impl ErrorTrait for Error {
@@ -68,6 +69,9 @@ impl std::fmt::Display for Error {
                 source
             ),
             Error::IrcParseError(source) => write!(f, "IRC parse error:\n{}", source),
+            Error::TagParseError(tag, content) => {
+                write!(f, "Tag content parsing error in tag {}={}", tag, content)
+            }
         }
     }
 }
