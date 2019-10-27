@@ -6,7 +6,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::client_messages::{ClientMessage, Command};
 use crate::Error;
-use crate::event::stream::TwitchChatStream;
+use crate::event::TwitchChatStream;
 
 pub struct TwitchChatConnection<Ws> {
     inner_stream: TwitchChatStream<Ws>

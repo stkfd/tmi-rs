@@ -1,3 +1,6 @@
+//! Contains the structs that hold event specific data, and traits to access their contents in
+//! EventData<_, _> structs.
+
 use std::fmt::Debug;
 
 use crate::event::{EventData, ToOwnedEvent};

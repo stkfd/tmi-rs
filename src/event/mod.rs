@@ -7,17 +7,18 @@ use std::fmt::Debug;
 
 use fnv::FnvHashMap;
 
-use data::*;
-
 use crate::event::tags::MessageTags;
 use crate::irc::IrcMessage;
 use crate::irc_constants::replies::*;
 use crate::util::RefToString;
 use crate::{Error, StringRef};
 
-pub mod data;
-pub mod stream;
+mod inner_data;
+mod stream;
 pub mod tags;
+
+pub use inner_data::*;
+pub use stream::*;
 
 /// Enum containing all event types that can be received from Twitch
 #[derive(Debug, Clone, PartialEq, Eq, From)]
