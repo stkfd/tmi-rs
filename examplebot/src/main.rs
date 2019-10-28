@@ -6,6 +6,8 @@ extern crate log;
 use std::env;
 use std::error::Error;
 use tmi_rs::{TwitchClientBuilder, TwitchClient, futures::StreamExt};
+use tmi_rs::dispatch::{EventDispatch, MatcherBuilder, HandlerBuilder, EventHandlerResult};
+use tmi_rs::futures::future::ok;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -16,6 +18,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .cap_membership(true)
         .build()?;
     let mut connection = client.connect().await?;
+
+    let mut dispatch = EventDispatch::default();
+    dispatch.match_events(async move |e| true)
+        .handle(Box::new(async move |event| {
+            EventHandlerResult::Ok
+        }));
 
     connection.join("zapbeeblebrox123").await?;
     connection.stream_mut().by_ref().for_each(async move |event| {
