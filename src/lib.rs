@@ -55,6 +55,7 @@ pub use errors::*;
 pub mod client;
 pub mod client_messages;
 pub mod connection;
+pub mod dispatch;
 pub mod errors;
 pub mod event;
 pub mod irc;
