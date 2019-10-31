@@ -1,8 +1,12 @@
 [package]
 name = "tmi-rs"
+description = "Websocket based asynchronous connector to Twitch chat"
+categories = ["asynchronous", "twitch", "websocket", "irc"]
+keywords = ["twitch", "chat", "irc", "websockets", "async", "futures"]
 version = "0.1.0"
 authors = ["cerebellum42 <cere@fastmail.fm>"]
 edition = "2018"
+license = "MPL-2.0"
 
 [dependencies]
 log = "0.4.8"

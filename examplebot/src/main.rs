@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 match event {
                     Event::PrivMsg(event_data) => {
                         if event_data.message().starts_with("!hello") {
-                            sender.message(channel.clone(), "Hello World!").await?;
+                            sender.message(event_data.channel().to_owned(), "Hello World!").await?;
                         }
                     }
                     _ => {

@@ -1,5 +1,18 @@
 
-# Rust Twitch chat interface
+# tmi-rs: Rust Twitch chat interface
+
+This is an asynchronous websocket based interface to Twitch chat intended as
+a base for chat bots and other programs that interact with Twitch chat.
+
+This library is currently still highly experimental since it is based on the `futures-preview` alpha and makes
+use of several dependencies which themselves are not yet stable on the new async/await system.
+
+All official chat events and tags are supported, but some more advanced features are still
+missing, including:
+
+* Rate limiting
+* Automatic detection of user status (mod/vip/etc.) and adjustment of rate limits based on that status
+* Ability to directly `await` the results of commands that have a response from Twitch, like `/mods`
 
 ### Example usage
 
@@ -32,7 +45,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 match event {
                     Event::PrivMsg(event_data) => {
                         if event_data.message().starts_with("!hello") {
-                            sender.message(channel.clone(), "Hello World!").await?;
+                            sender.message(event_data.channel().to_owned(), "Hello World!").await?;
                         }
                     }
                     _ => {
