@@ -564,10 +564,12 @@ impl<T: StringRef> ToOwnedEvent for CapabilityEvent<T> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use std::convert::TryFrom;
+
     use crate::event::Event;
     use crate::irc::*;
-    use std::convert::TryFrom;
+
+    use super::*;
 
     #[test]
     fn test_join() {
