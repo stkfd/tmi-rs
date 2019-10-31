@@ -2,8 +2,8 @@
 
 use std::borrow::{Borrow, Cow};
 
-use futures_util::{SinkExt, TryFutureExt};
 use futures_sink::Sink;
+use futures_util::{SinkExt, TryFutureExt};
 
 use crate::client_messages::{ClientMessage, Command};
 use crate::Error;

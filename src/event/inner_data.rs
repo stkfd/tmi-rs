@@ -561,3 +561,281 @@ impl<T: StringRef> ToOwnedEvent for CapabilityEvent<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::event::Event;
+    use crate::irc::*;
+    use std::convert::TryFrom;
+
+    #[test]
+    fn test_join() {
+        let (remaining, msg) =
+            IrcMessage::parse(":ronni!ronni@ronni.tmi.twitch.tv JOIN #dallas").unwrap();
+        assert_eq!(remaining, "");
+        let event: Event<&str> = Event::try_from(msg).unwrap();
+        assert_eq!(
+            event,
+            Event::Join(EventData {
+                sender: Some("ronni"),
+                event: ChannelEvent::new("#dallas").into(),
+                tags: None
+            })
+        )
+    }
+
+    #[test]
+    fn test_mode() {
+        let (remaining, msg) = IrcMessage::parse(":jtv MODE #dallas +o ronni").unwrap();
+        assert_eq!(remaining, "");
+        let event: Event<&str> = Event::try_from(msg).unwrap();
+        assert_eq!(
+            event,
+            Event::Mode(EventData {
+                sender: Some("jtv"),
+                event: ModeChangeEvent {
+                    channel: "#dallas",
+                    mode_change: "+o",
+                    user: "ronni"
+                },
+                tags: None
+            })
+        )
+    }
+
+    #[test]
+    fn test_names() {
+        let msg = vec![
+            ":ronni.tmi.twitch.tv 353 ronni = #dallas :ronni fred wilma",
+            ":ronni.tmi.twitch.tv 353 ronni = #dallas :barney betty",
+            ":ronni.tmi.twitch.tv 366 ronni #dallas :End of /NAMES list",
+        ]
+        .into_iter()
+        .map(IrcMessage::parse)
+        .map(|result| {
+            let (remaining, parsed) = result.unwrap();
+            assert_eq!(remaining, "");
+            parsed
+        })
+        .collect::<Vec<_>>();
+        info!("{:?}", msg);
+        let events: Vec<Event<&str>> = msg
+            .into_iter()
+            .map(Event::try_from)
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            events,
+            vec![
+                Event::Names(EventData {
+                    sender: None,
+                    event: NamesListEvent {
+                        user: "ronni",
+                        channel: "#dallas",
+                        names: vec!["ronni", "fred", "wilma"]
+                    },
+                    tags: None
+                }),
+                Event::Names(EventData {
+                    sender: None,
+                    event: NamesListEvent {
+                        user: "ronni",
+                        channel: "#dallas",
+                        names: vec!["barney", "betty"]
+                    },
+                    tags: None
+                }),
+                Event::EndOfNames(EventData {
+                    sender: None,
+                    event: ChannelEvent::new("#dallas").into(),
+                    tags: None
+                })
+            ]
+        )
+    }
+
+    #[test]
+    fn test_part() {
+        let (remaining, msg) =
+            IrcMessage::parse(":ronni!ronni@ronni.tmi.twitch.tv PART #dallas").unwrap();
+        assert_eq!(remaining, "");
+        let event: Event<&str> = Event::try_from(msg).unwrap();
+        assert_eq!(
+            event,
+            Event::Part(EventData {
+                sender: Some("ronni"),
+                event: ChannelEvent::new("#dallas").into(),
+                tags: None
+            })
+        )
+    }
+
+    #[test]
+    fn test_clearchat() {
+        let (remaining, msg1) =
+            IrcMessage::parse(":tmi.twitch.tv CLEARCHAT #dallas :ronni").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(
+            Event::try_from(msg1).unwrap(),
+            Event::ClearChat(EventData {
+                sender: None,
+                event: ChannelUserEvent::new("#dallas", Some("ronni")).into(),
+                tags: None
+            })
+        );
+
+        let (remaining, msg2) = IrcMessage::parse(":tmi.twitch.tv CLEARCHAT #dallas").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(
+            Event::try_from(msg2).unwrap(),
+            Event::ClearChat(EventData {
+                sender: None,
+                event: ChannelUserEvent::new("#dallas", None).into(),
+                tags: None
+            })
+        );
+    }
+
+    #[test]
+    fn test_clearmsg() {
+        use fnv::FnvHashMap;
+        use std::iter::FromIterator;
+
+        let (remaining, msg) = IrcMessage::parse(
+            "@login=ronni;target-msg-id=abc-123-def :tmi.twitch.tv CLEARMSG #dallas :HeyGuys",
+        )
+        .unwrap();
+        assert_eq!(remaining, "");
+        let event: Event<&str> = Event::try_from(msg).unwrap();
+        assert_eq!(
+            event,
+            Event::ClearMsg(EventData {
+                sender: None,
+                event: ChannelMessageEvent::new("#dallas", "HeyGuys").into(),
+                tags: Some(FnvHashMap::from_iter(
+                    vec![("login", "ronni"), ("target-msg-id", "abc-123-def")].into_iter()
+                ))
+            })
+        )
+    }
+
+    #[test]
+    fn test_host() {
+        let (remaining, msg) =
+            IrcMessage::parse(":tmi.twitch.tv HOSTTARGET #hosting_channel :<channel> 999").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(
+            Event::try_from(msg).unwrap(),
+            Event::Host(EventData {
+                sender: None,
+                event: HostEvent {
+                    hosting_channel: "#hosting_channel",
+                    target_channel: Some("<channel>"),
+                    viewer_count: Some(999)
+                },
+                tags: None
+            })
+        )
+    }
+
+    #[test]
+    fn test_host_end() {
+        let (remaining, msg) =
+            IrcMessage::parse(":tmi.twitch.tv HOSTTARGET #hosting_channel :-").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(
+            Event::try_from(msg).unwrap(),
+            Event::Host(EventData {
+                sender: None,
+                event: HostEvent {
+                    hosting_channel: "#hosting_channel",
+                    target_channel: None,
+                    viewer_count: None
+                },
+                tags: None
+            })
+        )
+    }
+
+    #[test]
+    fn test_notice() {
+        use fnv::FnvHashMap;
+        use std::iter::FromIterator;
+        let (remaining, msg) = IrcMessage::parse(
+            "@msg-id=slow_off :tmi.twitch.tv NOTICE #dallas :This room is no longer in slow mode.",
+        )
+        .unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(
+            Event::try_from(msg).unwrap(),
+            Event::Notice(EventData {
+                sender: None,
+                event: ChannelMessageEvent::new("#dallas", "This room is no longer in slow mode.")
+                    .into(),
+                tags: Some(FnvHashMap::from_iter(
+                    vec![("msg-id", "slow_off")].into_iter()
+                ))
+            })
+        )
+    }
+
+    #[test]
+    fn test_roomstate() {
+        use fnv::FnvHashMap;
+        use std::iter::FromIterator;
+        let (remaining, msg) = IrcMessage::parse(
+            "@emote-only=0;followers-only=0;r9k=0;slow=0;subs-only=0 :tmi.twitch.tv ROOMSTATE #dallas",
+        )
+            .unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(
+            Event::try_from(msg).unwrap(),
+            Event::RoomState(EventData {
+                sender: None,
+                event: ChannelEvent::new("#dallas").into(),
+                tags: Some(FnvHashMap::from_iter(
+                    vec![
+                        ("emote-only", "0"),
+                        ("followers-only", "0"),
+                        ("subs-only", "0"),
+                        ("slow", "0"),
+                        ("r9k", "0")
+                    ]
+                    .into_iter()
+                ))
+            })
+        )
+    }
+
+    #[test]
+    fn test_usernotice() {
+        // this doesn't test the available tags for usernotice
+        let (remaining, msg) =
+            IrcMessage::parse(":tmi.twitch.tv USERNOTICE #<channel> :<message>").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(
+            Event::try_from(msg).unwrap(),
+            Event::UserNotice(EventData {
+                sender: None,
+                event: ChannelMessageEvent::new("#<channel>", "<message>").into(),
+                tags: None
+            })
+        )
+    }
+
+    #[test]
+    fn test_userstate() {
+        // this doesn't test the available tags for userstate
+        let (remaining, msg) = IrcMessage::parse(":tmi.twitch.tv USERSTATE #dallas").unwrap();
+        assert_eq!(remaining, "");
+        assert_eq!(
+            Event::try_from(msg).unwrap(),
+            Event::UserState(EventData {
+                sender: None,
+                event: ChannelEvent::new("#dallas").into(),
+                tags: None
+            })
+        )
+    }
+}
