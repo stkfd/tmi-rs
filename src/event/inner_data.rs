@@ -19,10 +19,34 @@ use crate::StringRef;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectMessageEvent<T: Debug + Clone + Eq> {
     /// IRC command name, typically 3 digit numeric code
-    pub(crate) command: T,
-
+    command: T,
     /// IRC command params
-    pub(crate) params: Vec<T>,
+    params: Vec<T>,
+}
+
+impl<T: StringRef> ConnectMessageEvent<T> {
+    /// New connect event
+    pub fn new(command: T, params: Vec<T>) -> Self {
+        ConnectMessageEvent { command, params }
+    }
+}
+
+/// Access to data in connect events
+pub trait ConnectMessageEventData<T> {
+    /// The command name/code
+    fn command(&self) -> &T;
+    /// The command parameters
+    fn params(&self) -> &[T];
+}
+
+impl<T: StringRef> ConnectMessageEventData<T> for EventData<T, ConnectMessageEvent<T>> {
+    fn command(&self) -> &T {
+        &self.event.command
+    }
+
+    fn params(&self) -> &[T] {
+        self.event.params.as_slice()
+    }
 }
 
 impl<T: StringRef> ToOwnedEvent for ConnectMessageEvent<T> {
@@ -42,6 +66,7 @@ pub struct UserEvent<T: StringRef> {
     user: T,
 }
 
+/// User event data accessors
 pub trait UserEventData<T> {
     /// Username contained in the message
     fn user(&self) -> &T;
@@ -282,11 +307,6 @@ impl_inner_to_owned!(UserStateEvent, ChannelEvent);
 #[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub struct GlobalUserStateEvent;
 
-pub struct Badge<T: StringRef> {
-    pub badge: T,
-    pub version: T,
-}
-
 /// Connection close event
 #[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub struct CloseEvent;
@@ -306,9 +326,20 @@ pub struct UnknownEvent;
 /// NAMES list response data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamesListEvent<T: StringRef> {
-    pub(crate) user: T,
-    pub(crate) channel: T,
-    pub(crate) names: Vec<T>,
+    user: T,
+    channel: T,
+    names: Vec<T>,
+}
+
+impl<T: StringRef> NamesListEvent<T> {
+    /// New names event content
+    pub fn new(user: T, channel: T, names: Vec<T>) -> Self {
+        NamesListEvent {
+            user,
+            channel,
+            names,
+        }
+    }
 }
 
 /// Data accessors for NAMES events
@@ -354,9 +385,20 @@ impl<T: StringRef> ToOwnedEvent for NamesListEvent<T> {
 /// User mode change event
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModeChangeEvent<T: StringRef> {
-    pub(crate) channel: T,
-    pub(crate) mode_change: T,
-    pub(crate) user: T,
+    channel: T,
+    mode_change: T,
+    user: T,
+}
+
+impl<T: StringRef> ModeChangeEvent<T> {
+    /// Create MODE event content
+    pub fn new(channel: T, mode_change: T, user: T) -> Self {
+        ModeChangeEvent {
+            channel,
+            mode_change,
+            user,
+        }
+    }
 }
 
 /// Data accessors for MODE events
@@ -404,8 +446,34 @@ impl<T: StringRef> ToOwnedEvent for ModeChangeEvent<T> {
 /// Whisper message event data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WhisperEvent<T: StringRef> {
-    pub recipient: T,
-    pub message: T,
+    recipient: T,
+    message: T,
+}
+
+impl<T: StringRef> WhisperEvent<T> {
+    /// Create WHISPER event content
+    pub fn new(recipient: T, message: T) -> WhisperEvent<T> {
+        WhisperEvent { recipient, message }
+    }
+}
+
+/// Whisper event data accessors
+pub trait WhisperEventData<T: StringRef> {
+    /// Recipient of the whisper
+    fn recipient(&self) -> &T;
+    /// The message
+    fn message(&self) -> &T;
+}
+
+impl<T: StringRef> WhisperEventData<T> for EventData<T, WhisperEvent<T>> {
+    #[inline]
+    fn recipient(&self) -> &T {
+        &self.event.recipient
+    }
+    #[inline]
+    fn message(&self) -> &T {
+        &self.event.message
+    }
 }
 
 impl<T: StringRef> ToOwnedEvent for WhisperEvent<T> {
@@ -419,6 +487,7 @@ impl<T: StringRef> ToOwnedEvent for WhisperEvent<T> {
     }
 }
 
+/// HOST event data accessors
 pub trait HostEventData<T> {
     /// The hosting channel
     fn hosting_channel(&self) -> &T;
@@ -431,9 +500,20 @@ pub trait HostEventData<T> {
 /// Host event data (hosting channel, target channel, viewers)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostEvent<T: StringRef> {
-    pub(crate) hosting_channel: T,
-    pub(crate) target_channel: Option<T>,
-    pub(crate) viewer_count: Option<usize>,
+    hosting_channel: T,
+    target_channel: Option<T>,
+    viewer_count: Option<usize>,
+}
+
+impl<T: StringRef> HostEvent<T> {
+    /// New host event
+    pub fn new(hosting_channel: T, target_channel: Option<T>, viewer_count: Option<usize>) -> Self {
+        HostEvent {
+            hosting_channel,
+            target_channel,
+            viewer_count,
+        }
+    }
 }
 
 impl<T: StringRef> HostEventData<T> for EventData<T, HostEvent<T>> {
@@ -468,6 +548,7 @@ impl<T: StringRef> ToOwnedEvent for HostEvent<T> {
 /// IRCv3 CAP response data, sent in response to CAP requests
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityEvent<T: Debug + Clone + Eq> {
+    /// Parameters of the CAP response
     pub params: Vec<T>,
 }
 

@@ -1,7 +1,6 @@
 //! Parser for twitch flavored IRC
 
 use std::convert::identity;
-use std::hash::Hash;
 use std::iter::FromIterator;
 
 use fnv::FnvHashMap;
@@ -16,20 +15,27 @@ use nom::{AsChar, IResult};
 use crate::util::RefToString;
 use crate::{Error, StringRef};
 
+/// Represents an IRC message
 #[derive(Debug, Eq, PartialEq)]
 pub struct IrcMessage<T: StringRef> {
+    /// IRCv3 tags
     pub tags: Option<FnvHashMap<T, T>>,
+    /// IRC prefix
     pub prefix: Option<IrcPrefix<T>>,
+    /// IRC Command name
     pub command: T,
+    /// Command parameters
     pub command_params: Vec<T>,
 }
 
 impl IrcMessage<&str> {
+    /// Parse one or more IRC messages into a `Vec`
     pub fn parse_many(input: &str) -> IResult<&str, Vec<IrcMessage<&str>>> {
         separated_list(tag("\r\n"), opt(Self::parse))(input)
             .map(|(rem, messages)| (rem, messages.into_iter().filter_map(identity).collect()))
     }
 
+    /// Parse a single IRC message
     pub fn parse(input: &str) -> IResult<&str, IrcMessage<&str>> {
         let (remaining, (tags, prefix, command, command_params)) =
             tuple((irc_tags, opt(irc_prefix), command, command_params))(input)?;
@@ -105,23 +111,14 @@ where
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
-pub struct IrcTagKey<T> {
-    is_client_tag: bool,
-    vendor: Option<T>,
-    key_name: T,
-}
-
-impl<'a, T: AsRef<str> + 'a> From<&'a T> for IrcTagKey<&'a str> {
-    fn from(source: &'a T) -> Self {
-        irc_tag_key(source.as_ref()).unwrap().1
-    }
-}
-
+/// Struct containing the parts of the IRC message prefix
 #[derive(Debug, Eq, PartialEq)]
 pub struct IrcPrefix<T> {
+    /// Host part of the IRC prefix
     pub host: Option<T>,
+    /// Nick part of the IRC prefix
     pub nick: Option<T>,
+    /// User part of the IRC prefix
     pub user: Option<T>,
 }
 
@@ -260,23 +257,6 @@ fn irc_tag_key_str(input: &str) -> IResult<&str, &str> {
     )))(input)
 }
 
-/// Parse the key of an IRC tag
-fn irc_tag_key(input: &str) -> IResult<&str, IrcTagKey<&str>> {
-    let (remaining, (client_prefix, vendor, key_name)) = tuple((
-        opt(char('+')),
-        opt(terminated(take_while1(|c| !"=/".contains(c)), char('/'))),
-        take_while1(|c: char| c.is_alphanumeric() || c == '-'),
-    ))(input)?;
-    Ok((
-        remaining,
-        IrcTagKey {
-            vendor,
-            key_name,
-            is_client_tag: client_prefix.is_some(),
-        },
-    ))
-}
-
 /// Take 1 or more non-space characters
 fn not_spaces1(input: &str) -> IResult<&str, &str> {
     take_while1(|c| c != ' ')(input)
@@ -311,26 +291,6 @@ fn test_command_params() {
     assert_eq!(
         result,
         Ok(("", vec!["middle1", "middle2", "middle3", "trailing",],),)
-    );
-}
-
-#[test]
-fn test_irc_tag_key() {
-    assert_eq!(
-        IrcTagKey::from(&"badge-info"),
-        IrcTagKey {
-            is_client_tag: false,
-            vendor: None,
-            key_name: "badge-info"
-        }
-    );
-    assert_eq!(
-        IrcTagKey::from(&"+vend/badge-info"),
-        IrcTagKey {
-            is_client_tag: true,
-            vendor: Some("vend"),
-            key_name: "badge-info"
-        }
     );
 }
 

@@ -9,7 +9,7 @@ use fnv::FnvHashMap;
 
 use crate::event::tags::MessageTags;
 use crate::irc::IrcMessage;
-use crate::irc_constants::replies::*;
+use crate::irc_constants::*;
 use crate::util::RefToString;
 use crate::{Error, StringRef};
 
@@ -21,6 +21,7 @@ pub use inner_data::*;
 pub use stream::*;
 
 /// Enum containing all event types that can be received from Twitch
+#[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq, Eq, From)]
 pub enum Event<T: StringRef> {
     PrivMsg(EventData<T, PrivMsgEvent<T>>),
@@ -110,10 +111,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             }
             "WHISPER" => EventData {
                 sender,
-                event: WhisperEvent::<&str> {
-                    recipient: msg.try_param(0)?,
-                    message: msg.try_param(1)?,
-                },
+                event: WhisperEvent::<&str>::new(msg.try_param(0)?, msg.try_param(1)?),
                 tags: msg.tags,
             }
             .into(),
@@ -127,11 +125,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                 check_parameter_count(3, &msg)?;
                 EventData {
                     sender,
-                    event: ModeChangeEvent::<&str> {
-                        channel: msg.param(0),
-                        mode_change: msg.param(1),
-                        user: msg.param(2),
-                    },
+                    event: ModeChangeEvent::<&str>::new(msg.param(0), msg.param(1), msg.param(2)),
                     tags: msg.tags,
                 }
                 .into()
@@ -140,11 +134,11 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
                 check_parameter_count(4, &msg)?;
                 EventData {
                     sender,
-                    event: NamesListEvent::<&str> {
-                        user: msg.param(0),
-                        channel: msg.param(2),
-                        names: msg.param(3).split(' ').collect(),
-                    },
+                    event: NamesListEvent::<&str>::new(
+                        msg.param(0),
+                        msg.param(2),
+                        msg.param(3).split(' ').collect(),
+                    ),
                     tags: msg.tags,
                 }
                 .into()
@@ -184,20 +178,19 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             }
             "HOSTTARGET" => {
                 let host_parts: Vec<_> = msg.param(1).split(' ').collect();
+                let hosting_channel = msg.param(0);
+                let target_channel = if host_parts[0] == "-" {
+                    None
+                } else {
+                    host_parts.get(0).copied()
+                };
+                let viewer_count = host_parts
+                    .get(1)
+                    .copied()
+                    .and_then(|num| num.parse::<usize>().ok());
                 EventData {
                     sender,
-                    event: HostEvent::<&str> {
-                        hosting_channel: msg.param(0),
-                        target_channel: if host_parts[0] == "-" {
-                            None
-                        } else {
-                            host_parts.get(0).copied()
-                        },
-                        viewer_count: host_parts
-                            .get(1)
-                            .copied()
-                            .and_then(|num| num.parse::<usize>().ok()),
-                    },
+                    event: HostEvent::<&str>::new(hosting_channel, target_channel, viewer_count),
                     tags: msg.tags,
                 }
                 .into()
@@ -255,10 +248,7 @@ impl<'a> TryFrom<IrcMessage<&'a str>> for Event<&'a str> {
             RPL_WELCOME | RPL_YOURHOST | RPL_CREATED | RPL_MYINFO | RPL_MOTDSTART | RPL_MOTD
             | RPL_ENDOFMOTD => EventData {
                 sender,
-                event: ConnectMessageEvent {
-                    command: msg.command,
-                    params: msg.params().to_vec(),
-                },
+                event: ConnectMessageEvent::new(msg.command, msg.params().to_vec()),
                 tags: msg.tags,
             }
             .into(),

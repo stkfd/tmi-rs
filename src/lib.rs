@@ -29,7 +29,13 @@
 //! ```
 
 #![feature(async_closure)]
-#![warn(unused_must_use, unused_mut, unused_imports, unused_import_braces)]
+#![warn(
+    unused_must_use,
+    unused_mut,
+    unused_imports,
+    unused_import_braces,
+    missing_docs
+)]
 
 #[macro_use]
 extern crate derive_builder;
@@ -46,24 +52,25 @@ use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-pub use futures;
+pub use futures_channel;
+pub use futures_core;
+pub use futures_sink;
 
 pub use client::*;
-pub use connection::*;
 pub use errors::*;
+pub use sender::*;
 
-pub mod client;
+mod client;
 pub mod client_messages;
-pub mod connection;
-pub mod dispatch;
-pub mod errors;
+mod errors;
 pub mod event;
 pub mod irc;
 pub mod irc_constants;
 pub mod selectors;
-pub mod util;
+mod sender;
+pub(crate) mod util;
 
 /// Trait that is used when generically referring to a &str, String, or other type that can be
-/// used just like a borrowed string
+/// used like a borrowed string
 pub trait StringRef: Borrow<str> + Debug + Clone + Hash + Eq + Display {}
 impl<T> StringRef for T where T: Borrow<str> + Debug + Clone + Hash + Eq + Display {}

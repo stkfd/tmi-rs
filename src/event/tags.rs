@@ -45,7 +45,7 @@ use nom::sequence::{separated_pair, tuple};
 use nom::IResult;
 
 use crate::event::inner_data::{
-    Badge, ClearChatEvent, ClearMsgEvent, GlobalUserStateEvent, PrivMsgEvent, RoomStateEvent,
+    ClearChatEvent, ClearMsgEvent, GlobalUserStateEvent, PrivMsgEvent, RoomStateEvent,
     UserNoticeEvent, UserStateEvent,
 };
 use crate::event::{EventData, WhisperEvent};
@@ -202,6 +202,7 @@ pub trait BitsTag<T: StringRef>: MessageTags<T> {
 }
 impl<T: StringRef> BitsTag<T> for EventData<T, PrivMsgEvent<T>> {}
 
+/// Emote tag accessor
 pub trait EmotesTag<T: StringRef>: MessageTags<T> {
     /// `emotes` tag
     ///
@@ -260,9 +261,12 @@ pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
 impl<T: StringRef> UserMessageTags<T> for EventData<T, PrivMsgEvent<T>> {}
 impl<T: StringRef> UserMessageTags<T> for EventData<T, UserNoticeEvent<T>> {}
 
+/// Replacement instruction for an emote
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmoteReplacement {
+    /// Emote ID
     pub emote_id: usize,
+    /// Start and end index of the emote in the message
     pub indices: Vec<(usize, usize)>,
 }
 
@@ -342,6 +346,7 @@ pub trait RoomStateTags<T: StringRef>: MessageTags<T> {
 }
 impl<T: StringRef> RoomStateTags<T> for EventData<T, RoomStateEvent<T>> {}
 
+/// Acessors for tags on whisper messages
 pub trait WhisperTags<T: StringRef>: MessageTags<T> {
     /// `message-id` tag for whispers, identifies messages within conversations.
     fn message_id(&self) -> Result<usize, Error> {
@@ -358,6 +363,14 @@ pub trait WhisperTags<T: StringRef>: MessageTags<T> {
     }
 }
 impl<T: StringRef> WhisperTags<T> for EventData<T, WhisperEvent<T>> {}
+
+/// Badges from the `badges` and `badges-info` tags
+pub struct Badge<T: StringRef> {
+    /// Badge name
+    pub badge: T,
+    /// Badge "version", meaning depends on the badge
+    pub version: T,
+}
 
 fn parse_badges<'a>(input: &'a str, tag_name: &str) -> Result<Vec<Badge<&'a str>>, Error> {
     separated_list(char(','), parse_badge)(input)
