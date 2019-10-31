@@ -22,11 +22,11 @@ tokio-io = "0.2.0-alpha.6"
 tokio-executor = "0.2.0-alpha.6"
 tokio-net = "0.2.0-alpha.6"
 tokio-tls = "0.3.0-alpha.6"
-tokio-tungstenite = { git = "https://github.com/dbcfd/tokio-tungstenite.git", branch = "tokio2", features=["connect", "tls"] }
+tokio-tungstenite = { git = "https://github.com/dbcfd/tokio-tungstenite.git", rev = "0c2779965dc50b19256ef2d73edb82dd5db3e0de", features=["connect", "tls"] }
 url = "2.1.0"
 nom = "5.0.1"
 smallvec = "0.6.10"
-future-bus = { git = "https://github.com/cere42/future-bus.git" }
+future-bus = "0.1.0"
 
 [lib]
 name = "tmi_rs"
