@@ -12,10 +12,10 @@ use crate::StringRef;
 ///
 /// Includes the following IRC reply codes:
 ///
-/// [RPL_WELCOME](crate::irc_constants::replies::RPL_WELCOME), [RPL_YOURHOST](crate::irc_constants::replies::RPL_YOURHOST),
-/// [RPL_CREATED](crate::irc_constants::replies::RPL_CREATED), [RPL_MYINFO](crate::irc_constants::replies::RPL_MYINFO),
-/// [RPL_MOTDSTART](crate::irc_constants::replies::RPL_MOTDSTART), [RPL_MOTD](crate::irc_constants::replies::RPL_MOTD),
-/// [RPL_ENDOFMOTD](crate::irc_constants::replies::RPL_ENDOFMOTD)
+/// [RPL_WELCOME](crate::irc_constants::RPL_WELCOME), [RPL_YOURHOST](crate::irc_constants::RPL_YOURHOST),
+/// [RPL_CREATED](crate::irc_constants::RPL_CREATED), [RPL_MYINFO](crate::irc_constants::RPL_MYINFO),
+/// [RPL_MOTDSTART](crate::irc_constants::RPL_MOTDSTART), [RPL_MOTD](crate::irc_constants::RPL_MOTD),
+/// [RPL_ENDOFMOTD](crate::irc_constants::RPL_ENDOFMOTD)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectMessageEvent<T: Debug + Clone + Eq> {
     /// IRC command name, typically 3 digit numeric code
