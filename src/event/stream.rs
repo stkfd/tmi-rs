@@ -1,12 +1,10 @@
 use core::fmt;
 use core::pin::Pin;
-use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 
-use futures::stream::FusedStream;
-use futures::task::Context;
-use futures::{Poll, Sink, Stream};
+use futures_core::{stream::FusedStream, task::Context, Poll, Stream};
+use futures_sink::Sink;
 use smallvec::SmallVec;
 use tokio_tungstenite::tungstenite::error::Error as WsError;
 use tokio_tungstenite::tungstenite::Message;
@@ -17,7 +15,8 @@ use futures_sink::Sink;
 use crate::client_messages::ClientMessage;
 use crate::event::{CloseEvent, Event};
 use crate::irc::IrcMessage;
-use crate::Error;
+use crate::{Error, StringRef};
+use std::sync::Arc;
 
 type EventBuffer = SmallVec<[Result<Event<String>, Error>; 10]>;
 
@@ -46,6 +45,7 @@ where
 {
     unsafe_pinned!(stream: St);
 
+    /// Create new `TwitchChatStream` from a stream of websocket messages
     pub fn new(stream: St) -> TwitchChatStream<St> {
         TwitchChatStream {
             stream,
@@ -99,14 +99,14 @@ impl<St> Stream for TwitchChatStream<St>
 where
     St: Stream<Item = Result<Message, WsError>> + Unpin,
 {
-    type Item = Result<Event<String>, Error>;
+    type Item = Arc<Result<Event<String>, Error>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let unpin_self = Pin::into_inner(self);
         // if buffer contains any messages, return directly
         if let Some(buffer) = &mut unpin_self.buffer {
             if !buffer.is_empty() {
-                return Poll::Ready(Some(buffer.remove(buffer.len() - 1)));
+                return Poll::Ready(Some(Arc::new(buffer.remove(buffer.len() - 1))));
             }
         }
 
@@ -120,7 +120,7 @@ where
                 if let Some(events) = result {
                     unpin_self.buffer.replace(events);
                     if let Some(buffer) = &mut unpin_self.buffer {
-                        Poll::Ready(Some(buffer.remove(buffer.len() - 1)))
+                        Poll::Ready(Some(Arc::new(buffer.remove(buffer.len() - 1))))
                     } else {
                         Poll::Pending
                     }
@@ -138,9 +138,10 @@ where
 }
 
 // Forwarding impl of Sink from the underlying stream
-impl<'a, St> Sink<&'a ClientMessage<&'a str>> for TwitchChatStream<St>
+impl<St, Item> Sink<ClientMessage<Item>> for TwitchChatStream<St>
 where
     St: Stream + Sink<Message> + Unpin,
+    Item: StringRef,
 {
     type Error = St::Error;
 
@@ -148,12 +149,8 @@ where
         Pin::new(&mut Pin::into_inner(self).stream).poll_ready(cx)
     }
 
-    fn start_send(
-        self: Pin<&mut Self>,
-        item: &'a ClientMessage<&'a str>,
-    ) -> Result<(), Self::Error> {
-        Pin::new(&mut Pin::into_inner(self).stream)
-            .start_send(Message::from(format!("{}", item.borrow())))
+    fn start_send(self: Pin<&mut Self>, item: ClientMessage<Item>) -> Result<(), Self::Error> {
+        Pin::new(&mut Pin::into_inner(self).stream).start_send(Message::from(format!("{}", item)))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

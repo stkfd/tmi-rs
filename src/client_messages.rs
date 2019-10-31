@@ -7,6 +7,7 @@ use crate::StringRef;
 
 /// Messages to be sent from the client to twitch servers
 #[allow(missing_docs)]
+#[derive(Clone)]
 pub enum ClientMessage<T: Borrow<str>> {
     PrivMsg { channel: T, message: T },
     Join(T),
@@ -145,6 +146,7 @@ impl<T: StringRef> fmt::Display for Command<T> {
 }
 
 /// Twitch client capabilities
+#[derive(Clone, Copy)]
 pub enum Capability {
     /// twitch.tv/membership capability
     Membership,

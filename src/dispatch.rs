@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::pin::Pin;
-use std::sync::Arc;
 
 use fnv::FnvHashMap;
 use futures::Future;

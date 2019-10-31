@@ -5,22 +5,36 @@ use std::fmt::{Debug, Formatter};
 use crate::event::Event;
 use crate::irc::IrcMessage;
 
+/// Error type for tmi-rs methods
 #[derive(Debug)]
 pub enum Error {
+    /// Message sending error
     SendError,
+    /// Websocket error
     WebsocketError {
+        /// Error details
         details: Cow<'static, str>,
+        /// Underlying Websocket error that was the cause
         source: tokio_tungstenite::tungstenite::Error,
     },
+    /// Missing IRC parameter in one of the received messages
     MissingIrcCommandParameter(usize, IrcMessage<String>),
+    /// Wrong number of IRC parameters in one of the received messages
     WrongIrcParameterCount(usize, IrcMessage<String>),
+    /// Unrecognized IRC command was received
     UnknownIrcCommand(IrcMessage<String>),
+    /// An IRCv3 tag that is normally expected to be set on a message was missing
     MissingTag {
+        /// The tag name that was expected to exist
         tag: Cow<'static, str>,
+        /// The event causing the issue
         event: Event<String>,
     },
-    MessageChannelError(futures::channel::mpsc::SendError),
+    /// Send error in an internal message passing channel
+    MessageChannelError(futures_channel::mpsc::SendError),
+    /// IRC parsing error
     IrcParseError(String),
+    /// Tag parsing error
     TagParseError(String, String),
 }
 
