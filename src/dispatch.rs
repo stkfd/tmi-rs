@@ -1,8 +1,7 @@
-use std::fmt::Debug;
-use std::pin::Pin;
-
 use fnv::FnvHashMap;
 use futures::Future;
+use std::fmt::Debug;
+use std::pin::Pin;
 
 use crate::event::Event;
 

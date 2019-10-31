@@ -2,6 +2,7 @@ use core::fmt;
 use core::pin::Pin;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
+use std::sync::Arc;
 
 use futures_core::{stream::FusedStream, task::Context, Poll, Stream};
 use futures_sink::Sink;
@@ -9,14 +10,10 @@ use smallvec::SmallVec;
 use tokio_tungstenite::tungstenite::error::Error as WsError;
 use tokio_tungstenite::tungstenite::Message;
 
-#[cfg(feature = "sink")]
-use futures_sink::Sink;
-
 use crate::client_messages::ClientMessage;
 use crate::event::{CloseEvent, Event};
 use crate::irc::IrcMessage;
 use crate::{Error, StringRef};
-use std::sync::Arc;
 
 type EventBuffer = SmallVec<[Result<Event<String>, Error>; 10]>;
 
