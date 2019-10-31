@@ -8,7 +8,7 @@
 //!
 //! use std::env;
 //! use std::error::Error;
-//! use tmi_rs::{TwitchClientBuilder, TwitchClient, futures::StreamExt};
+//! use tmi_rs::{TwitchClientBuilder, TwitchClient, futures_util::StreamExt};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn Error>> {
@@ -18,10 +18,10 @@
 //!         .token(env::var("TWITCH_AUTH")?)
 //!         .cap_membership(true)
 //!         .build()?;
-//!     let mut connection = client.connect().await?;
+//!     let (mut sender, receiver) = client.connect().await?;
 //!
-//!     connection.join("forsen").await?;
-//!     connection.stream_mut().by_ref().for_each(async move |event| {
+//!     sender.join("forsen").await?;
+//!     receiver.for_each(async move |event| {
 //!         info!("{:?}", event);
 //!     }).await;
 //!     Ok(())
@@ -29,7 +29,7 @@
 //! ```
 
 #![feature(async_closure)]
-#![warn(
+#![deny(
     unused_must_use,
     unused_mut,
     unused_imports,
@@ -55,6 +55,7 @@ use std::hash::Hash;
 pub use futures_channel;
 pub use futures_core;
 pub use futures_sink;
+pub use futures_util;
 
 pub use client::*;
 pub use errors::*;

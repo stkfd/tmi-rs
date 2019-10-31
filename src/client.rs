@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use future_bus::BusSubscriber;
 use futures_channel::mpsc;
-use futures_util::{StreamExt, SinkExt};
+use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::connect_async;
 use url::Url;
 
@@ -66,14 +66,20 @@ impl TwitchClient {
             }
         })?;
 
-        let (mut ws_sink, mut ws_recv) = TwitchChatStream::new(ws).split::<ClientMessage<Cow<'_, str>>>();
+        let (mut ws_sink, mut ws_recv) =
+            TwitchChatStream::new(ws).split::<ClientMessage<Cow<'_, str>>>();
         let mut event_bus = ::future_bus::bounded(100);
         let event_receiver = event_bus.subscribe();
-        let (client_sender, mut client_recv) = mpsc::channel::<ClientMessage<Cow<'static, str>>>(100);
+        let (client_sender, mut client_recv) =
+            mpsc::channel::<ClientMessage<Cow<'static, str>>>(100);
         let mut sender = TwitchChatSender::new(client_sender);
 
-        tokio_executor::spawn(async move { event_bus.send_all(&mut ws_recv).await.unwrap(); });
-        tokio_executor::spawn(async move { ws_sink.send_all(&mut client_recv).await.unwrap(); });
+        tokio_executor::spawn(async move {
+            event_bus.send_all(&mut ws_recv).await.unwrap();
+        });
+        tokio_executor::spawn(async move {
+            ws_sink.send_all(&mut client_recv).await.unwrap();
+        });
 
         let mut capabilities = Vec::with_capacity(3);
         if self.cap_commands {
