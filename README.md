@@ -1,3 +1,9 @@
+
+# Rust Twitch chat interface
+
+### Example usage
+
+```rust
 #![feature(async_closure)]
 #[macro_use]
 extern crate log;
@@ -42,3 +48,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }).await;
     Ok(())
 }
+```

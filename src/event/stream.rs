@@ -10,10 +10,9 @@ use smallvec::SmallVec;
 use tokio_tungstenite::tungstenite::error::Error as WsError;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::client_messages::ClientMessage;
 use crate::event::{CloseEvent, Event};
 use crate::irc::IrcMessage;
-use crate::{Error, StringRef};
+use crate::Error;
 
 type EventBuffer = SmallVec<[Result<Event<String>, Error>; 10]>;
 
@@ -135,10 +134,10 @@ where
 }
 
 // Forwarding impl of Sink from the underlying stream
-impl<St, Item> Sink<ClientMessage<Item>> for TwitchChatStream<St>
+impl<St, IntoMessage> Sink<IntoMessage> for TwitchChatStream<St>
 where
     St: Stream + Sink<Message> + Unpin,
-    Item: StringRef,
+    Message: From<IntoMessage>,
 {
     type Error = St::Error;
 
@@ -146,8 +145,8 @@ where
         Pin::new(&mut Pin::into_inner(self).stream).poll_ready(cx)
     }
 
-    fn start_send(self: Pin<&mut Self>, item: ClientMessage<Item>) -> Result<(), Self::Error> {
-        Pin::new(&mut Pin::into_inner(self).stream).start_send(Message::from(format!("{}", item)))
+    fn start_send(self: Pin<&mut Self>, item: IntoMessage) -> Result<(), Self::Error> {
+        Pin::new(&mut Pin::into_inner(self).stream).start_send(Message::from(item))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

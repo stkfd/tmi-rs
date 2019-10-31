@@ -6,7 +6,7 @@ use std::sync::Arc;
 use future_bus::BusSubscriber;
 use futures_channel::mpsc;
 use futures_util::{SinkExt, StreamExt};
-use tokio_tungstenite::connect_async;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
 use crate::client_messages::{Capability, ClientMessage};
@@ -50,13 +50,7 @@ impl TwitchClient {
     /// to block until the connection is closed.
     pub async fn connect(
         &self,
-    ) -> Result<
-        (
-            TwitchChatSender<mpsc::Sender<ClientMessage<Cow<'static, str>>>>,
-            ChatReceiver,
-        ),
-        Error,
-    > {
+    ) -> Result<(TwitchChatSender<mpsc::Sender<Message>>, ChatReceiver), Error> {
         debug!("Connecting to {}", self.url);
         let (ws, _) = connect_async(self.url.clone()).await.map_err(|e| {
             error!("Connection to {} failed", self.url);
@@ -66,12 +60,10 @@ impl TwitchClient {
             }
         })?;
 
-        let (mut ws_sink, mut ws_recv) =
-            TwitchChatStream::new(ws).split::<ClientMessage<Cow<'_, str>>>();
+        let (mut ws_sink, mut ws_recv) = TwitchChatStream::new(ws).split::<Message>();
         let mut event_bus = ::future_bus::bounded(100);
         let event_receiver = event_bus.subscribe();
-        let (client_sender, mut client_recv) =
-            mpsc::channel::<ClientMessage<Cow<'static, str>>>(100);
+        let (client_sender, mut client_recv) = mpsc::channel::<Message>(100);
         let mut sender = TwitchChatSender::new(client_sender);
 
         tokio_executor::spawn(async move {
@@ -79,6 +71,22 @@ impl TwitchClient {
         });
         tokio_executor::spawn(async move {
             ws_sink.send_all(&mut client_recv).await.unwrap();
+        });
+
+        let internal_receiver = event_receiver.try_clone().expect("Get internal receiver");
+        let internal_sender = sender.clone();
+        tokio_executor::spawn(async {
+            let mut responses =
+                internal_receiver
+                    .filter_map(|e: Arc<Result<Event<String>, Error>>| {
+                        futures_util::future::ready(match *e {
+                            Ok(Event::Ping(_)) => Some(ClientMessage::<&str>::Pong.to_string()),
+                            _ => None,
+                        })
+                    });
+
+            let mut snd = internal_sender;
+            snd.send_all(&mut responses).await.unwrap();
         });
 
         let mut capabilities = Vec::with_capacity(3);
@@ -92,7 +100,9 @@ impl TwitchClient {
             capabilities.push(Capability::Membership)
         }
         sender
-            .send(ClientMessage::<Cow<'static, str>>::CapRequest(capabilities))
+            .send(&ClientMessage::<Cow<'static, str>>::CapRequest(
+                capabilities,
+            ))
             .await?;
         sender
             .login(self.username.clone(), self.token.clone())
