@@ -2,6 +2,7 @@
 
 use std::borrow::Borrow;
 use std::fmt;
+use tokio_tungstenite::tungstenite::Message;
 
 use crate::StringRef;
 
@@ -15,6 +16,8 @@ pub enum ClientMessage<T: Borrow<str>> {
     Nick(T),
     Pass(T),
     CapRequest(Vec<Capability>),
+    Ping,
+    Pong,
 }
 
 impl<T: StringRef> fmt::Display for ClientMessage<T> {
@@ -35,7 +38,15 @@ impl<T: StringRef> fmt::Display for ClientMessage<T> {
             ),
             ClientMessage::Nick(nick) => write!(f, "NICK {}", nick),
             ClientMessage::Pass(pass) => write!(f, "PASS {}", pass),
+            ClientMessage::Ping => write!(f, "PING"),
+            ClientMessage::Pong => write!(f, "PONG"),
         }
+    }
+}
+
+impl<T: StringRef> Into<Message> for &ClientMessage<T> {
+    fn into(self) -> Message {
+        Message::Text(self.to_string())
     }
 }
 

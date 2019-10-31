@@ -1,7 +1,7 @@
 [package]
 name = "tmi-rs"
 version = "0.1.0"
-authors = ["Stefan Kaufhold <stefan@skaufhold.de>"]
+authors = ["cerebellum42 <cere@fastmail.fm>"]
 edition = "2018"
 
 [dependencies]

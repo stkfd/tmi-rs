@@ -308,12 +308,16 @@ pub trait RoomStateTags<T: StringRef>: MessageTags<T> {
         }
     }
 
-    /// `followers-only` tag. Set when followers only mode is active.
+    /// `followers-only` tag. Some(amount of minutes followed) when followers only mode is active,
+    /// None when inactive.
     #[inline]
-    fn followers_only(&self) -> bool {
-        match self.tag("followers-only").map(|t| t.borrow()) {
-            Some("1") => true,
-            _ => false,
+    fn followers_only(&self) -> Option<isize> {
+        match self
+            .tag("followers-only")
+            .and_then(|t| isize::from_str(t.borrow()).ok())
+        {
+            Some(v) if v >= 0 => Some(v),
+            _ => None,
         }
     }
 
