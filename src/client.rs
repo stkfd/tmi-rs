@@ -77,13 +77,12 @@ impl TwitchClient {
         let internal_sender = sender.clone();
         tokio_executor::spawn(async {
             let mut responses =
-                internal_receiver
-                    .filter_map(|e: Arc<Result<Event<String>, Error>>| {
-                        futures_util::future::ready(match *e {
-                            Ok(Event::Ping(_)) => Some(ClientMessage::<&str>::Pong.to_string()),
-                            _ => None,
-                        })
-                    });
+                internal_receiver.filter_map(|e: Arc<Result<Event<String>, Error>>| {
+                    futures_util::future::ready(match *e {
+                        Ok(Event::Ping(_)) => Some(ClientMessage::<String>::Pong),
+                        _ => None,
+                    })
+                });
 
             let mut snd = internal_sender;
             snd.send_all(&mut responses).await.unwrap();
@@ -100,9 +99,7 @@ impl TwitchClient {
             capabilities.push(Capability::Membership)
         }
         sender
-            .send(&ClientMessage::<Cow<'static, str>>::CapRequest(
-                capabilities,
-            ))
+            .send(ClientMessage::<Cow<'static, str>>::CapRequest(capabilities))
             .await?;
         sender
             .login(self.username.clone(), self.token.clone())

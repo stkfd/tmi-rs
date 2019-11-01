@@ -4,6 +4,7 @@ use std::borrow::Borrow;
 use std::fmt;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::rate_limits::RateLimitable;
 use crate::StringRef;
 
 /// Messages to be sent from the client to twitch servers
@@ -47,6 +48,30 @@ impl<T: StringRef> fmt::Display for ClientMessage<T> {
 impl<T: StringRef> Into<Message> for &ClientMessage<T> {
     fn into(self) -> Message {
         Message::Text(self.to_string())
+    }
+}
+
+impl<T: StringRef> Into<Message> for ClientMessage<T> {
+    fn into(self) -> Message {
+        Message::Text(self.to_string())
+    }
+}
+
+impl<T: StringRef> RateLimitable for &ClientMessage<T> {
+    fn channel_slow_mode(&self) -> Option<&str> {
+        match self {
+            ClientMessage::PrivMsg { channel, .. } => Some(channel.borrow()),
+            _ => None,
+        }
+    }
+}
+
+impl<T: StringRef> RateLimitable for ClientMessage<T> {
+    fn channel_slow_mode(&self) -> Option<&str> {
+        match self {
+            ClientMessage::PrivMsg { channel, .. } => Some(channel.borrow()),
+            _ => None,
+        }
     }
 }
 

@@ -1,23 +1,23 @@
 //! Message/command sender helpers
 
 use std::borrow::{Borrow, Cow};
+use std::pin::Pin;
 
+use futures_core::task::Context;
+use futures_core::Poll;
 use futures_sink::Sink;
 use futures_util::SinkExt;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use crate::client_messages::{ClientMessage, Command};
+use crate::rate_limits::RateLimitable;
 use crate::Error;
-use futures_core::task::Context;
-use futures_core::Poll;
-use std::pin::Pin;
 
 /// A wrapper around any `Sink<ClientMessage<Cow<'static, str>>>` that provides methods to send Twitch
 /// specific messages or commands to the sink.
 #[derive(Clone)]
 pub struct TwitchChatSender<Si: Clone + Unpin> {
     sink: Si,
-    throttle_seconds: Option<usize>,
 }
 
 impl<Si: Unpin + Clone> Unpin for TwitchChatSender<Si> {}
@@ -25,7 +25,7 @@ impl<Si: Unpin + Clone> Unpin for TwitchChatSender<Si> {}
 impl<Si, M> Sink<M> for TwitchChatSender<Si>
 where
     Si: Sink<WsMessage> + Unpin + Clone,
-    M: Into<WsMessage>,
+    M: Into<WsMessage> + RateLimitable,
 {
     type Error = Error;
 
@@ -62,13 +62,13 @@ where
 {
     /// Create a new chat sender using an underlying `Sink<ClientMessage<Cow<'static, str>>>`. This
     pub fn new(sink: Si) -> Self {
-        TwitchChatSender { sink, throttle_seconds: None }
+        TwitchChatSender { sink }
     }
 
     /// Send a whisper
     pub async fn message<
         S1: Into<Cow<'static, str>> + Borrow<str>,
-        S2: Into<Cow<'static, str>> + Borrow<str>
+        S2: Into<Cow<'static, str>> + Borrow<str>,
     >(
         &mut self,
         channel: S1,
@@ -77,7 +77,8 @@ where
         self.send(&ClientMessage::PrivMsg {
             channel: channel.into(),
             message: message.into(),
-        }).await
+        })
+        .await
     }
 
     /// Joins a twitch channel

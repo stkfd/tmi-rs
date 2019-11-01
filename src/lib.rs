@@ -67,6 +67,8 @@ extern crate log;
 extern crate pin_utils;
 #[macro_use]
 extern crate smallvec;
+#[macro_use]
+extern crate futures_util;
 
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
@@ -75,7 +77,6 @@ use std::hash::Hash;
 pub use futures_channel;
 pub use futures_core;
 pub use futures_sink;
-pub use futures_util;
 
 pub use client::*;
 pub use errors::*;
@@ -87,6 +88,7 @@ mod errors;
 pub mod event;
 pub mod irc;
 pub mod irc_constants;
+pub mod rate_limits;
 pub mod selectors;
 mod sender;
 pub(crate) mod util;
