@@ -48,7 +48,6 @@
 //! }
 //! ```
 
-#![feature(async_closure)]
 #![deny(
     unused_must_use,
     unused_mut,
@@ -67,8 +66,6 @@ extern crate log;
 extern crate pin_utils;
 #[macro_use]
 extern crate smallvec;
-#[macro_use]
-extern crate futures_util;
 
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
