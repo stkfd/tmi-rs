@@ -7,9 +7,11 @@ use std::time::{Duration, Instant};
 use fnv::FnvHashMap;
 use futures_core::stream::{FusedStream, Stream};
 use futures_core::task::{Context, Poll};
-use futures_util::StreamExt;
+use futures_util::FutureExt;
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
-use tokio_timer::Interval;
+use tokio_timer::clock::now;
+use tokio_timer::timer::Handle;
+use tokio_timer::Delay;
 
 /// Rate limiting sink extension methods
 pub trait RateLimitExt<Item>: Stream {
@@ -46,7 +48,7 @@ pub struct BufferedRateLimiter<St: Stream<Item = Item>, Item: RateLimitable> {
     buf: VecDeque<Item>,
     // Track capacity separately from the `VecDeque`, which may be rounded up
     capacity: usize,
-    channel_slowmode: FnvHashMap<String, (SlowModeLimit, Option<Interval>)>,
+    channel_slowmode: FnvHashMap<String, (SlowModeLimit, Option<Delay>)>,
     default_slow: SlowModeLimit,
 }
 
@@ -56,7 +58,7 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
     unsafe_pinned!(stream: St);
     unsafe_unpinned!(buf: VecDeque<Item>);
     unsafe_unpinned!(capacity: usize);
-    unsafe_unpinned!(channel_slowmode: FnvHashMap<String, (SlowModeLimit, Option<Interval>)>);
+    unsafe_unpinned!(channel_slowmode: FnvHashMap<String, (SlowModeLimit, Option<Delay>)>);
 
     pub(super) fn new(stream: St, capacity: usize, default_slow: SlowModeLimit) -> Self {
         BufferedRateLimiter {
@@ -69,21 +71,17 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
     }
 
     /// Configure slow mode rate limiting for a channel.
-    pub fn set_channel_slowmode(mut self: Pin<&mut Self>, channel: String, limit: SlowModeLimit) {
-        let interval = limit.new_interval();
-        self.as_mut()
-            .channel_slowmode()
-            .insert(channel, (limit, interval));
+    pub fn set_channel_slowmode(&mut self, channel: String, limit: SlowModeLimit) {
+        self.channel_slowmode.insert(channel, (limit, None));
     }
 
     fn ensure_interval(mut self: Pin<&mut Self>, channel: &str) -> bool {
         // if the channel was never queried before, insert the default setting
         if !self.channel_slowmode.contains_key(channel) {
             let default_slow = self.default_slow;
-            self.as_mut().channel_slowmode().insert(
-                channel.to_owned(),
-                (default_slow, default_slow.new_interval()),
-            );
+            self.as_mut()
+                .channel_slowmode()
+                .insert(channel.to_owned(), (default_slow, None));
         }
 
         // check if a slow mode interval is set for the channel
@@ -97,18 +95,18 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
         mut self: Pin<&mut Self>,
         channel: &str,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Instant>> {
+    ) -> Poll<()> {
         self.as_mut().ensure_interval(channel);
 
         self.as_mut()
             .channel_slowmode()
             .get_mut(channel)
-            .and_then(|(_, interval)| interval.as_mut())
-            .map(|interval| interval.poll_next(cx))
-            .unwrap_or_else(|| Poll::Ready(Some(Instant::now())))
+            .and_then(|(_, delay)| delay.as_mut())
+            .map(|delay| delay.poll_unpin(cx))
+            .unwrap_or_else(|| Poll::Ready(()))
     }
 
-    fn ready_buf_item(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Option<Item> {
+    fn pop_first_ready_item(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Option<Item> {
         let Self {
             buf,
             channel_slowmode,
@@ -118,18 +116,38 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
             if let Some(channel) = item.channel_slow_mode() {
                 let ready = channel_slowmode
                     .get_mut(channel)
-                    .and_then(|(_, interval)| interval.as_mut())
-                    .map(|interval| interval.poll_next_unpin(cx))
-                    .unwrap_or_else(|| Poll::Ready(Some(Instant::now())));
+                    .map(|(mode, delay)| {
+                        if let Some(delay) = delay {
+                            let poll = delay.poll_unpin(cx);
+                            if let Poll::Ready(_) = poll {
+                                if let Some(deadline) = mode.next_deadline() {
+                                    delay.reset(deadline);
+                                }
+                            }
+                            poll
+                        } else {
+                            Poll::Ready(())
+                        }
+                    })
+                    .unwrap_or_else(|| Poll::Ready(()));
                 if let Poll::Ready(_) = ready {
                     return Some(i);
                 }
-                return None;
             }
             None
         });
 
         ready_item_idx.and_then(|i| buf.swap_remove_back(i))
+    }
+
+    fn reset_channel_delay(mut self: Pin<&mut Self>, channel: &str) {
+        if let Some((mode, opt_delay)) = self.as_mut().channel_slowmode.get_mut(channel) {
+            if let Some(delay) = mode.new_delay() {
+                opt_delay.replace(delay);
+            } else {
+                opt_delay.take();
+            }
+        }
     }
 
     /// Get a shared reference to the inner sink.
@@ -166,7 +184,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<S::Item>> {
         // return any ready items in the buffer if available
         if !self.as_ref().buf.is_empty() {
-            let ready_item = self.as_mut().ready_buf_item(cx);
+            let ready_item = self.as_mut().pop_first_ready_item(cx);
             if ready_item.is_some() {
                 return Poll::Ready(ready_item);
             }
@@ -176,6 +194,7 @@ where
                 if let Some(channel) = item.channel_slow_mode() {
                     let poll_channel = self.as_mut().poll_channel_slowmode(channel, cx);
                     if poll_channel.is_ready() {
+                        self.as_mut().reset_channel_delay(channel);
                         Poll::Ready(Some(item))
                     } else {
                         self.as_mut().buf().push_back(item);
@@ -186,7 +205,7 @@ where
                 }
             }
             Poll::Ready(None) => {
-                if self.buf.len() == 0 {
+                if self.buf.is_empty() {
                     Poll::Ready(None)
                 } else {
                     Poll::Pending
@@ -224,26 +243,77 @@ pub enum SlowModeLimit {
 
 impl SlowModeLimit {
     /// Create an `Interval` that matches this limit
-    pub fn new_interval(&self) -> Option<Interval> {
+    pub fn new_delay(&self) -> Option<Delay> {
+        self.next_deadline()
+            .map(|deadline| Handle::current().delay(deadline))
+    }
+
+    /// Get the next time when a message can be posted within the limits
+    pub fn next_deadline(&self) -> Option<Instant> {
         match self {
-            SlowModeLimit::Channel(secs) => Some(Duration::from_secs(*secs as u64)),
-            SlowModeLimit::Global => Some(Duration::from_secs(1)),
+            SlowModeLimit::Channel(secs) => Some(now() + Duration::from_secs(*secs as u64)),
+            SlowModeLimit::Global => Some(now() + Duration::from_secs(1)),
             SlowModeLimit::Unlimited => None,
         }
-        .map(Interval::new_interval)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use futures_util::stream::iter;
+    use std::time::Duration;
 
-    struct Limitable {
-        channel: Option<String>,
+    use futures_util::stream::iter;
+    use futures_util::StreamExt;
+    use tokio_test::{assert_pending, assert_ready, assert_ready_eq, task};
+
+    use crate::rate_limits::{RateLimitExt, RateLimitable, SlowModeLimit};
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct Limitable(Option<String>);
+    impl RateLimitable for Limitable {
+        fn channel_slow_mode(&self) -> Option<&str> {
+            self.0.as_ref().map(AsRef::as_ref)
+        }
     }
 
     #[test]
-    fn test_throttle() {
-        //iter(vec![1,2,3,4,5])
+    fn test_default_slowmode() {
+        task::mock(|cx| {
+            tokio_test::clock::mock(|handle| {
+                let a = Limitable(Some("a".to_string()));
+                let mut stream = iter(vec![a.clone(), a.clone(), a.clone()])
+                    .rate_limited(10, SlowModeLimit::Global);
+                assert_ready!(stream.poll_next_unpin(cx));
+                assert_pending!(stream.poll_next_unpin(cx));
+
+                handle.advance(Duration::from_millis(1100));
+
+                assert_ready_eq!(stream.poll_next_unpin(cx), Some(a.clone()));
+                assert_pending!(stream.poll_next_unpin(cx));
+
+                handle.advance(Duration::from_millis(1000));
+
+                assert_ready_eq!(stream.poll_next_unpin(cx), Some(a.clone()));
+                assert_ready_eq!(stream.poll_next_unpin(cx), None);
+            });
+        });
+    }
+
+    #[test]
+    fn test_custom_slowmode() {
+        task::mock(|cx| {
+            tokio_test::clock::mock(|handle| {
+                let a = Limitable(Some("a".to_string()));
+                let mut stream =
+                    iter(vec![a.clone(), a.clone()]).rate_limited(10, SlowModeLimit::Global);
+                stream.set_channel_slowmode("a".to_string(), SlowModeLimit::Channel(10));
+                assert_ready!(stream.poll_next_unpin(cx));
+                handle.advance(Duration::from_secs(5));
+                assert_pending!(stream.poll_next_unpin(cx));
+                handle.advance(Duration::from_secs(5));
+                assert_ready_eq!(stream.poll_next_unpin(cx), Some(a.clone()));
+                assert_ready_eq!(stream.poll_next_unpin(cx), None);
+            });
+        });
     }
 }
