@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["priv_msg","Match any normal channel message"]]});

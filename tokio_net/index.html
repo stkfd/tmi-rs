@@ -1,0 +1,30 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `tokio_net` crate."><meta name="keywords" content="rust, rustlang, rust-lang, tokio_net"><title>tokio_net - Rust</title><link rel="stylesheet" type="text/css" href="../normalize.css"><link rel="stylesheet" type="text/css" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../dark.css"><link rel="stylesheet" type="text/css" href="../light.css" id="themeStyle"><script src="../storage.js"></script><noscript><link rel="stylesheet" href="../noscript.css"></noscript><link rel="shortcut icon" href="../favicon.ico"><style type="text/css">#crate-search{background-image:url("../down-arrow.svg");}</style></head><body class="rustdoc mod"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../tokio_net/index.html'><div class='logo-container'><img src='../rust-logo.png' alt='logo'></div></a><p class='location'>Crate tokio_net</p><div class="sidebar-elems"><a id='all-types' href='all.html'><p>See all tokio_net's items</p></a><div class="block items"><ul><li><a href="#modules">Modules</a></li><li><a href="#traits">Traits</a></li></ul></div><p class='location'></p><script>window.sidebarCurrent = {name: 'tokio_net', ty: 'mod', relpath: '../'};</script></div></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../theme.js"></script><nav class="sub"><form class="search-form js-only"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><a id="settings-menu" href="../settings.html"><img src="../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><h1 class='fqn'><span class='out-of-band'><span id='render-detail'><a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class='inner'>&#x2212;</span>]</a></span><a class='srclink' href='../src/tokio_net/lib.rs.html#1-65' title='goto source code'>[src]</a></span><span class='in-band'>Crate <a class="mod" href=''>tokio_net</a></span></h1><div class='docblock'><p>Event loop that drives Tokio I/O resources.</p>
+<p>The reactor is the engine that drives asynchronous I/O resources (like TCP and
+UDP sockets). It is backed by <a href="http://github.com/carllerche/mio"><code>mio</code></a> and acts as a bridge between <a href="http://github.com/carllerche/mio"><code>mio</code></a> and
+<a href="http://github.com/rust-lang-nursery/futures-rs"><code>futures</code></a>.</p>
+<p>The crate provides:</p>
+<ul>
+<li>
+<p><a href="struct.Reactor.html"><code>Reactor</code></a> is the main type of this crate. It performs the event loop logic.</p>
+</li>
+<li>
+<p><a href="struct.Handle.html"><code>Handle</code></a> provides a reference to a reactor instance.</p>
+</li>
+<li>
+<p><a href="struct.Registration.html"><code>Registration</code></a> and <a href="struct.PollEvented.html"><code>PollEvented</code></a> allow third parties to implement I/O
+resources that are driven by the reactor.</p>
+</li>
+</ul>
+<p>Application authors will not use this crate directly. Instead, they will use the
+<code>tokio</code> crate. Library authors should only depend on <code>tokio-net</code> if they
+are building a custom I/O resource.</p>
+<p>For more details, see <a href="https://docs.rs/tokio/0.1/tokio/reactor/index.html">reactor module</a> documentation in the Tokio crate.</p>
+</div><h2 id='modules' class='section-header'><a href="#modules">Modules</a></h2>
+<table><tr class='module-item'><td><a class="mod" href="driver/index.html" title='tokio_net::driver mod'>driver</a></td><td class='docblock-short'><p>Event loop that drives Tokio I/O resources.</p>
+</td></tr><tr class='module-item'><td><a class="mod" href="tcp/index.html" title='tokio_net::tcp mod'>tcp</a></td><td class='docblock-short'><p>TCP bindings for <code>tokio</code>.</p>
+</td></tr><tr class='module-item'><td><a class="mod" href="udp/index.html" title='tokio_net::udp mod'>udp</a></td><td class='docblock-short'><p>UDP bindings for <code>tokio</code>.</p>
+</td></tr><tr class='module-item'><td><a class="mod" href="uds/index.html" title='tokio_net::uds mod'>uds</a></td><td class='docblock-short'><p>Unix Domain Sockets for Tokio.</p>
+</td></tr><tr class='module-item'><td><a class="mod" href="util/index.html" title='tokio_net::util mod'>util</a></td><td class='docblock-short'><p>Utilities for implementing networking types.</p>
+</td></tr></table><h2 id='traits' class='section-header'><a href="#traits">Traits</a></h2>
+<table><tr class='module-item'><td><a class="trait" href="trait.ToSocketAddrs.html" title='tokio_net::ToSocketAddrs trait'>ToSocketAddrs</a></td><td class='docblock-short'><p>Convert or resolve without blocking to one or more <code>SocketAddr</code> values.</p>
+</td></tr></table></section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../";window.currentCrate = "tokio_net";</script><script src="../aliases.js"></script><script src="../main.js"></script><script defer src="../search-index.js"></script></body></html>

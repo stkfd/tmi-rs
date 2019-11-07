@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Capability","Twitch client capabilities"],["ClientMessage","Messages to be sent from the client to twitch servers"],["Command","Available twitch chat commands (/timeout etc)"]]});

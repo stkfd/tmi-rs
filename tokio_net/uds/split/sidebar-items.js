@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["ReadHalf","Read half of a `UnixStream`."],["WriteHalf","Write half of a `UnixStream`."]]});

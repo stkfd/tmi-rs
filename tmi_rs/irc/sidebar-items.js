@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["IrcMessage","Represents an IRC message"],["IrcPrefix","Struct containing the parts of the IRC message prefix"]]});

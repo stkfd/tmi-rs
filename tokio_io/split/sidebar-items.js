@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["split","Split a single value implementing `AsyncRead + AsyncWrite` into separate `AsyncRead` and `AsyncWrite` handles."]],"struct":[["ReadHalf","The readable half of a value returned from `split`."],["WriteHalf","The writable half of a value returned from `split`."]]});
