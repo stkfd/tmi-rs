@@ -12,10 +12,12 @@ use url::Url;
 use crate::client_messages::{Capability, ClientMessage};
 use crate::event::{Event, TwitchChatStream};
 use crate::{Error, TwitchChatSender};
+use crate::rate_limits::{RateLimiter, RateLimiterConfig, RateLimitExt};
 
-/// Holds the configuration for a twitch chat client. Call `connect` to establish a connection using it.
+/// Holds the configuration for a twitch chat client. Convert it to a `TwitchClient` and call
+/// `connect` to establish a connection using it.
 #[derive(Debug, Clone, Builder)]
-pub struct TwitchClient {
+pub struct TwitchClientConfig {
     /// The chat server, by default `wss://irc-ws.chat.twitch.tv:443`
     #[builder(default = r#"Url::parse("wss://irc-ws.chat.twitch.tv:443").unwrap()"#)]
     pub url: Url,
@@ -37,6 +39,35 @@ pub struct TwitchClient {
     /// Whether to enable tags capability (default: true)
     #[builder(default = "true")]
     pub cap_tags: bool,
+
+    /// Rate limiting configuration
+    pub rate_limiter: RateLimiterConfig,
+}
+
+/// Represents a twitch chat client/connection. Call `connect` to establish a connection.
+#[derive(Debug)]
+pub struct TwitchClient {
+    url: Url,
+    username: String,
+    token: String,
+    cap_membership: bool,
+    cap_commands: bool,
+    cap_tags: bool,
+    rate_limiter: Arc<RateLimiter>,
+}
+
+impl From<TwitchClientConfig> for TwitchClient {
+    fn from(cfg: TwitchClientConfig) -> Self {
+        TwitchClient {
+            url: cfg.url,
+            username: cfg.username,
+            token: cfg.token,
+            cap_membership: cfg.cap_membership,
+            cap_commands: cfg.cap_commands,
+            cap_tags: cfg.cap_tags,
+            rate_limiter: Arc::new(cfg.rate_limiter.into())
+        }
+    }
 }
 
 type ChatReceiver = BusSubscriber<
@@ -50,7 +81,7 @@ impl TwitchClient {
     /// to block until the connection is closed.
     pub async fn connect(
         &self,
-    ) -> Result<(TwitchChatSender<mpsc::Sender<Message>>, ChatReceiver), Error> {
+    ) -> Result<(TwitchChatSender<mpsc::Sender<ClientMessage<String>>>, ChatReceiver), Error> {
         debug!("Connecting to {}", self.url);
         let (ws, _) = connect_async(self.url.clone()).await.map_err(|e| {
             error!("Connection to {} failed", self.url);
@@ -63,14 +94,19 @@ impl TwitchClient {
         let (mut ws_sink, mut ws_recv) = TwitchChatStream::new(ws).split::<Message>();
         let mut event_bus = ::future_bus::bounded(100);
         let event_receiver = event_bus.subscribe();
-        let (client_sender, mut client_recv) = mpsc::channel::<Message>(100);
+        let (client_sender, client_recv) = mpsc::channel::<ClientMessage<String>>(100);
         let mut sender = TwitchChatSender::new(client_sender);
 
         tokio_executor::spawn(async move {
             event_bus.send_all(&mut ws_recv).await.unwrap();
         });
+
+        let rate_limiter = self.rate_limiter.clone();
         tokio_executor::spawn(async move {
-            ws_sink.send_all(&mut client_recv).await.unwrap();
+            let mut messages = client_recv
+                .rate_limited(200, &rate_limiter)
+                .map(|msg| Message::from(msg.to_string()));
+            ws_sink.send_all(&mut messages).await.unwrap();
         });
 
         let internal_receiver = event_receiver.try_clone().expect("Get internal receiver");
@@ -99,12 +135,18 @@ impl TwitchClient {
             capabilities.push(Capability::Membership)
         }
         sender
-            .send(ClientMessage::<Cow<'static, str>>::CapRequest(capabilities))
+            .send(ClientMessage::<String>::CapRequest(capabilities))
             .await?;
         sender
             .login(self.username.clone(), self.token.clone())
             .await?;
 
         Ok((sender, event_receiver))
+    }
+
+    /// Get the rate limiter used for this client, can be used to change the rate limiting configuration
+    /// at runtime.
+    pub fn rate_limiter(&self) -> &Arc<RateLimiter> {
+        &self.rate_limiter
     }
 }
