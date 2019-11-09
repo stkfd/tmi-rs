@@ -8,8 +8,10 @@
 //!
 //! use std::env;
 //! use std::error::Error;
-//! use tmi_rs::{TwitchClientConfigBuilder, TwitchClient, futures_util::stream::StreamExt};
-//! use tmi_rs::event::{Event, ChannelMessageEventData};
+//!
+//! use tmi_rs::{futures_util::stream::StreamExt, TwitchClient, TwitchClientConfigBuilder};
+//! use tmi_rs::event::{ChannelMessageEventData, Event};
+//! use tmi_rs::rate_limits::RateLimiterConfig;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn Error>> {
@@ -19,31 +21,29 @@
 //!         .username(env::var("TWITCH_USERNAME")?)
 //!         .token(env::var("TWITCH_AUTH")?)
 //!         .cap_membership(true)
+//!         .rate_limiter(RateLimiterConfig::default())
 //!         .build()?
 //!         .into();
-//!     let (mut sender, mut receiver) = client.connect().await?;
-//!
+//!     let (mut sender, receiver) = client.connect().await?;
 //!     sender.join(channel.clone()).await?;
-//!
-//!     while let Some(event) = receiver.next().await {
-//!         match &*event {
-//!             Ok(event) => {
-//!                 match event {
-//!                     Event::PrivMsg(event_data) => {
-//!                         if event_data.message().starts_with("!hello") {
-//!                             sender.message(event_data.channel().to_owned(), "Hello World!").await?;
+//!     receiver.for_each_concurrent(None, |event| {
+//!         let mut sender = sender.clone();
+//!         async move {
+//!             match &*event {
+//!                 Ok(event) => {
+//!                     info!("{:?}", &event);
+//!                     match event {
+//!                         Event::PrivMsg(event_data) => {
+//!                             if event_data.message().starts_with("!hello") {
+//!                                 sender.message(event_data.channel().to_owned(), "Hello World!").await.unwrap();
+//!                             }
 //!                         }
-//!                     }
-//!                     _ => {
-//!                         info!("Event received: {:?}", event)
+//!                         _ => {}
 //!                     }
 //!                 }
+//!                 Err(e) => error!("Connection error: {}", e)
 //!             }
-//!             Err(e) => error!("Connection error: {}", e)
 //!         }
-//!     }
-//!     receiver.for_each(async move |event| {
-//!         info!("{:?}", event);
 //!     }).await;
 //!     Ok(())
 //! }

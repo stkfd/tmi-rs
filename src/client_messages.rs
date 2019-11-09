@@ -25,10 +25,10 @@ impl<T: StringRef> fmt::Display for ClientMessage<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
             ClientMessage::PrivMsg { channel, message } => {
-                write!(f, "PRIVMSG #{} :{}", channel, message)
+                write!(f, "PRIVMSG {} :{}", channel, message)
             }
-            ClientMessage::Join(channel) => write!(f, "JOIN #{}", channel),
-            ClientMessage::Part(channel) => write!(f, "PART #{}", channel),
+            ClientMessage::Join(channel) => write!(f, "JOIN {}", channel),
+            ClientMessage::Part(channel) => write!(f, "PART {}", channel),
             ClientMessage::CapRequest(caps) => write!(
                 f,
                 "CAP REQ :{}",

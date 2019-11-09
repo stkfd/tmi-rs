@@ -105,10 +105,14 @@ impl TwitchClient {
         tokio_executor::spawn(async move {
             let mut messages = client_recv
                 .rate_limited(200, &rate_limiter)
-                .map(|msg| Message::from(msg.to_string()));
+                .map(|msg| {
+                    debug!("msg: {}", msg.to_string());
+                    Message::from(msg.to_string())
+                });
             ws_sink.send_all(&mut messages).await.unwrap();
         });
 
+        // do any internal message handling like rate limit detection and ping pong
         let internal_receiver = event_receiver.try_clone().expect("Get internal receiver");
         let internal_sender = sender.clone();
         tokio_executor::spawn(async {
