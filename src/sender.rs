@@ -64,10 +64,7 @@ where
     }
 
     /// Send a whisper
-    pub async fn message<
-        S1: Into<String> + Borrow<str>,
-        S2: Into<String> + Borrow<str>,
-    >(
+    pub async fn message<S1: Into<String> + Borrow<str>, S2: Into<String> + Borrow<str>>(
         &mut self,
         channel: S1,
         message: S2,
@@ -80,10 +77,7 @@ where
     }
 
     /// Joins a twitch channel
-    pub async fn join<S: Into<String> + Borrow<str>>(
-        &mut self,
-        channel: S,
-    ) -> Result<(), Error> {
+    pub async fn join<S: Into<String> + Borrow<str>>(&mut self, channel: S) -> Result<(), Error> {
         self.send(ClientMessage::Join(channel.into())).await
     }
 
@@ -126,10 +120,7 @@ where
     }
 
     /// Clear a chat channel
-    pub async fn clear<S: Into<String> + Borrow<str>>(
-        &mut self,
-        channel: S,
-    ) -> Result<(), Error> {
+    pub async fn clear<S: Into<String> + Borrow<str>>(&mut self, channel: S) -> Result<(), Error> {
         self.send(ClientMessage::PrivMsg {
             channel: channel.into(),
             message: Command::<&str>::Clear.to_string(),
@@ -138,10 +129,7 @@ where
     }
 
     /// Set the user name color
-    pub async fn color<S: Into<String> + Borrow<str>>(
-        &mut self,
-        color: S,
-    ) -> Result<(), Error> {
+    pub async fn color<S: Into<String> + Borrow<str>>(&mut self, color: S) -> Result<(), Error> {
         self.send(ClientMessage::PrivMsg {
             channel: String::from("jtv"),
             message: Command::Color(color.borrow()).to_string(),
@@ -179,9 +167,7 @@ where
     }
 
     /// Disconnect from chat
-    pub async fn disconnect<S: Into<String> + Borrow<str>>(
-        &mut self,
-    ) -> Result<(), Error> {
+    pub async fn disconnect<S: Into<String> + Borrow<str>>(&mut self) -> Result<(), Error> {
         self.send(ClientMessage::PrivMsg {
             channel: String::from("jtv"),
             message: Command::<&str>::Disconnect.to_string(),
@@ -229,10 +215,7 @@ where
     }
 
     /// Stop hosting
-    pub async fn unhost<S: Into<String> + Borrow<str>>(
-        &mut self,
-        channel: S,
-    ) -> Result<(), Error> {
+    pub async fn unhost<S: Into<String> + Borrow<str>>(&mut self, channel: S) -> Result<(), Error> {
         self.send(ClientMessage::PrivMsg {
             channel: channel.into(),
             message: Command::<&str>::Unhost.to_string(),
@@ -254,10 +237,7 @@ where
     }
 
     /// Send a /me message
-    pub async fn me<S: Into<String> + Borrow<str>>(
-        &mut self,
-        message: S,
-    ) -> Result<(), Error> {
+    pub async fn me<S: Into<String> + Borrow<str>>(&mut self, message: S) -> Result<(), Error> {
         self.send(ClientMessage::PrivMsg {
             channel: String::from("jtv"),
             message: Command::Me(message.borrow()).to_string(),
@@ -318,10 +298,7 @@ where
     }
 
     /// Stop a raid
-    pub async fn unraid<S: Into<String> + Borrow<str>>(
-        &mut self,
-        channel: S,
-    ) -> Result<(), Error> {
+    pub async fn unraid<S: Into<String> + Borrow<str>>(&mut self, channel: S) -> Result<(), Error> {
         self.send(ClientMessage::PrivMsg {
             channel: channel.into(),
             message: Command::<&str>::Unraid.to_string(),
@@ -412,10 +389,7 @@ where
     }
 
     /// List the VIPs in a channel
-    pub async fn vips<S: Into<String> + Borrow<str>>(
-        &mut self,
-        channel: S,
-    ) -> Result<(), Error> {
+    pub async fn vips<S: Into<String> + Borrow<str>>(&mut self, channel: S) -> Result<(), Error> {
         self.send(ClientMessage::PrivMsg {
             channel: channel.into(),
             message: Command::<&str>::Vips.to_string(),

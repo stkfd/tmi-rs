@@ -11,8 +11,8 @@ use url::Url;
 
 use crate::client_messages::{Capability, ClientMessage};
 use crate::event::{Event, TwitchChatStream};
+use crate::rate_limits::{RateLimitExt, RateLimiter, RateLimiterConfig};
 use crate::{Error, TwitchChatSender};
-use crate::rate_limits::{RateLimiter, RateLimiterConfig, RateLimitExt};
 
 /// Holds the configuration for a twitch chat client. Convert it to a `TwitchClient` and call
 /// `connect` to establish a connection using it.
@@ -65,7 +65,7 @@ impl From<TwitchClientConfig> for TwitchClient {
             cap_membership: cfg.cap_membership,
             cap_commands: cfg.cap_commands,
             cap_tags: cfg.cap_tags,
-            rate_limiter: Arc::new(cfg.rate_limiter.into())
+            rate_limiter: Arc::new(cfg.rate_limiter.into()),
         }
     }
 }
@@ -81,7 +81,13 @@ impl TwitchClient {
     /// to block until the connection is closed.
     pub async fn connect(
         &self,
-    ) -> Result<(TwitchChatSender<mpsc::Sender<ClientMessage<String>>>, ChatReceiver), Error> {
+    ) -> Result<
+        (
+            TwitchChatSender<mpsc::Sender<ClientMessage<String>>>,
+            ChatReceiver,
+        ),
+        Error,
+    > {
         debug!("Connecting to {}", self.url);
         let (ws, _) = connect_async(self.url.clone()).await.map_err(|e| {
             error!("Connection to {} failed", self.url);
@@ -103,12 +109,10 @@ impl TwitchClient {
 
         let rate_limiter = self.rate_limiter.clone();
         tokio_executor::spawn(async move {
-            let mut messages = client_recv
-                .rate_limited(200, &rate_limiter)
-                .map(|msg| {
-                    debug!("msg: {}", msg.to_string());
-                    Message::from(msg.to_string())
-                });
+            let mut messages = client_recv.rate_limited(200, &rate_limiter).map(|msg| {
+                debug!("msg: {}", msg.to_string());
+                Message::from(msg.to_string())
+            });
             ws_sink.send_all(&mut messages).await.unwrap();
         });
 
