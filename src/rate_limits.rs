@@ -7,16 +7,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fnv::FnvHashMap;
-use futures_core::Future;
 use futures_core::stream::{FusedStream, Stream};
 use futures_core::task::{Context, Poll};
+use futures_core::Future;
 use futures_util::FutureExt;
+use parking_lot::RwLock;
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use smallvec::SmallVec;
-use tokio_sync::semaphore::{AcquireError, Permit, Semaphore};
+use tokio_sync::semaphore::{Permit, Semaphore};
 use tokio_timer::clock::now;
-use tokio_timer::Delay;
 use tokio_timer::timer::Handle;
+use tokio_timer::Delay;
 
 /// Rate limiting sink extension methods
 pub trait RateLimitExt<Item>: Stream {
@@ -27,7 +28,7 @@ pub trait RateLimitExt<Item>: Stream {
         self,
         capacity: usize,
         default_slow: SlowModeLimit,
-        default_buckets: impl IntoIterator<Item=Arc<RateLimitBucket>>
+        default_buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>,
     ) -> BufferedRateLimiter<Self, Item>
     where
         Self: Sized + Stream<Item = Item> + Unpin,
@@ -56,7 +57,7 @@ pub struct BufferedRateLimiter<St: Stream<Item = Item>, Item: RateLimitable> {
     capacity: usize,
     limits_map: FnvHashMap<String, ChannelLimits>,
     default_slow: SlowModeLimit,
-    default_buckets: SmallVec<[Arc<RateLimitBucket>; 5]>
+    default_buckets: SmallVec<[Arc<RateLimitBucket>; 5]>,
 }
 
 impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> Unpin for BufferedRateLimiter<St, Item> {}
@@ -67,32 +68,53 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
     unsafe_unpinned!(capacity: usize);
     unsafe_unpinned!(limits_map: FnvHashMap<String, ChannelLimits>);
 
-    pub(super) fn new(stream: St, capacity: usize, default_slow: SlowModeLimit, default_buckets: impl IntoIterator<Item=Arc<RateLimitBucket>>) -> Self {
+    pub(super) fn new(
+        stream: St,
+        capacity: usize,
+        default_slow: SlowModeLimit,
+        default_buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>,
+    ) -> Self {
         BufferedRateLimiter {
             stream,
             buf: VecDeque::with_capacity(capacity),
             capacity,
             limits_map: Default::default(),
             default_slow,
-            default_buckets: SmallVec::from_iter(default_buckets)
+            default_buckets: SmallVec::from_iter(default_buckets),
         }
     }
 
     /// Configure slow mode rate limiting for a channel.
     pub fn set_slow_mode(&mut self, channel: &str, limit: SlowModeLimit) {
         if self.limits_map.contains_key(channel) {
-            self.limits_map.get_mut(channel).unwrap().set_slow_mode(limit);
+            self.limits_map
+                .get_mut(channel)
+                .unwrap()
+                .set_slow_mode(limit);
         } else {
-            self.limits_map.insert(channel.to_owned(), ChannelLimits::new(limit, self.default_buckets.iter().cloned()));
+            self.limits_map.insert(
+                channel.to_owned(),
+                ChannelLimits::new(limit, self.default_buckets.iter().cloned()),
+            );
         }
     }
 
     /// Configure bucket based rate limiting for a channel.
-    pub fn set_limit_buckets(&mut self, channel: &str, buckets: impl IntoIterator<Item=Arc<RateLimitBucket>>) {
+    pub fn set_limit_buckets(
+        &mut self,
+        channel: &str,
+        buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>,
+    ) {
         if self.limits_map.contains_key(channel) {
-            self.limits_map.get_mut(channel).unwrap().set_buckets(buckets);
+            self.limits_map
+                .get_mut(channel)
+                .unwrap()
+                .set_buckets(buckets);
         } else {
-            self.limits_map.insert(channel.to_owned(), ChannelLimits::new(self.default_slow, buckets));
+            self.limits_map.insert(
+                channel.to_owned(),
+                ChannelLimits::new(self.default_slow, buckets),
+            );
         }
     }
 
@@ -105,8 +127,10 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
             ..
         } = Pin::into_inner(self);
         if !limits_map.contains_key(channel) {
-            limits_map
-                .insert(channel.to_owned(), ChannelLimits::new(*default_slow, default_buckets.iter().cloned()));
+            limits_map.insert(
+                channel.to_owned(),
+                ChannelLimits::new(*default_slow, default_buckets.iter().cloned()),
+            );
         }
 
         // check if a slow mode interval is set for the channel
@@ -132,20 +156,20 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
 
     fn pop_first_ready_item(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Option<Item> {
         let Self {
-            buf,
-            limits_map,
-            ..
+            buf, limits_map, ..
         } = Pin::into_inner(self);
         let ready_item_idx = buf.iter().enumerate().find_map(|(i, item)| {
             if let Some(channel) = item.slow_mode_channel() {
                 let ready = limits_map
                     .get_mut(channel)
                     .map(|limits| {
-
                         let slow_ready = limits.poll_slow_mode(cx).is_ready();
 
-                        if slow_ready { Poll::Ready(()) }
-                        else { Poll::Pending }
+                        if slow_ready {
+                            Poll::Ready(())
+                        } else {
+                            Poll::Pending
+                        }
                     })
                     .unwrap_or_else(|| Poll::Ready(()));
                 if let Poll::Ready(_) = ready {
@@ -248,6 +272,7 @@ where
     }
 }
 
+/// Container for all the rate limits that apply to a channel
 #[derive(Debug)]
 pub struct ChannelLimits {
     slow_mode: SlowModeLimit,
@@ -256,16 +281,26 @@ pub struct ChannelLimits {
 }
 
 impl ChannelLimits {
-    pub fn new(slow: SlowModeLimit, limit_buckets: impl IntoIterator<Item=Arc<RateLimitBucket>>) -> Self {
-        ChannelLimits { slow_mode: slow, slow_mode_delay: None, limit_buckets: SmallVec::from_iter(limit_buckets) }
+    /// New channel limit instance
+    pub fn new(
+        slow: SlowModeLimit,
+        limit_buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>,
+    ) -> Self {
+        ChannelLimits {
+            slow_mode: slow,
+            slow_mode_delay: None,
+            limit_buckets: SmallVec::from_iter(limit_buckets),
+        }
     }
 
+    /// Set the slow mode interval for this channel
     pub fn set_slow_mode(&mut self, slow: SlowModeLimit) {
         self.slow_mode = slow;
         self.slow_mode_delay = None;
     }
 
-    pub fn set_buckets(&mut self, buckets: impl IntoIterator<Item=Arc<RateLimitBucket>>) {
+    /// Set the rate limit buckets applied to this channel
+    pub fn set_buckets(&mut self, buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>) {
         self.limit_buckets.truncate(0);
         self.limit_buckets.extend(buckets)
     }
@@ -280,9 +315,11 @@ impl ChannelLimits {
         if let Some(delay) = &mut self.slow_mode_delay {
             match delay.poll_unpin(cx) {
                 Poll::Ready(_) => {
-                    if let Some(deadline) = self.slow_mode.next_deadline() { delay.reset(deadline) }
+                    if let Some(deadline) = self.slow_mode.next_deadline() {
+                        delay.reset(deadline)
+                    }
                     Poll::Ready(())
-                },
+                }
                 Poll::Pending => Poll::Pending,
             }
         } else {
@@ -295,7 +332,7 @@ impl ChannelLimits {
         if self.limit_buckets.iter().all(|bucket| bucket.is_ready()) {
             for bucket in &self.limit_buckets {
                 if (&**bucket).poll_unpin(cx).is_pending() {
-                    return Poll::Pending
+                    return Poll::Pending;
                 }
             }
             Poll::Ready(())
@@ -334,44 +371,54 @@ impl SlowModeLimit {
 }
 
 /// Semaphore based rate limit bucket with configurable refill delay and capacity
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RateLimitBucket {
     refill_delay: Duration,
     capacity: usize,
-    semaphore: Arc<Semaphore>,
+    refill_queue: RwLock<VecDeque<(Instant, Permit)>>,
+    semaphore: Semaphore,
 }
 
 impl RateLimitBucket {
+    /// Create a new rate limit bucket with the given capacity and refill rate
     pub fn new(capacity: usize, refill_delay: Duration) -> Self {
         RateLimitBucket {
             refill_delay,
-            capacity,
-            semaphore: Arc::new(Semaphore::new(capacity)),
+            capacity: capacity,
+            refill_queue: RwLock::new(VecDeque::with_capacity(capacity)),
+            semaphore: Semaphore::new(capacity),
         }
     }
 
+    /// Returns whether there are currently any messages left in the contingent
     pub fn is_ready(&self) -> bool {
         self.semaphore.available_permits() > 0
+    }
+
+    fn refill(&self) {
+        let time = now();
+        let mut queue = self.refill_queue.write();
+        while queue.len() > 0 && queue.front().expect("Peek next queue item").0 <= time {
+            let (_, mut permit) = queue.pop_front().expect("Pop instant");
+            permit.release(&self.semaphore);
+        }
     }
 }
 
 impl Future for &RateLimitBucket {
-    type Output = Result<(), AcquireError>;
+    type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.refill();
         let mut permit = Permit::new();
-        match permit.poll_acquire(cx, &*self.semaphore) {
-            Poll::Ready(Ok(())) => {
-                let semaphore = self.semaphore.clone();
-                let deadline = now() + self.refill_delay;
-                tokio_executor::spawn(async move {
-                    Handle::current().delay(deadline).await;
-                    permit.release(&*semaphore)
-                });
-                Poll::Ready(Ok(()))
-            },
-            Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
-            Poll::Pending => Poll::Pending,
+        match permit.try_acquire(&self.semaphore) {
+            Ok(_) => {
+                self.refill_queue
+                    .write()
+                    .push_back((now() + self.refill_delay, permit));
+                Poll::Ready(())
+            }
+            Err(_) => Poll::Pending,
         }
     }
 }
@@ -381,10 +428,10 @@ mod test {
     use std::time::Duration;
 
     use futures_util::stream::iter;
-    use futures_util::StreamExt;
+    use futures_util::{FutureExt, StreamExt};
     use tokio_test::{assert_pending, assert_ready, assert_ready_eq, task};
 
-    use crate::rate_limits::{RateLimitable, RateLimitExt, SlowModeLimit};
+    use crate::rate_limits::{RateLimitBucket, RateLimitExt, RateLimitable, SlowModeLimit};
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct Limitable(Option<String>);
@@ -399,8 +446,11 @@ mod test {
         task::mock(|cx| {
             tokio_test::clock::mock(|handle| {
                 let a = Limitable(Some("a".to_string()));
-                let mut stream = iter(vec![a.clone(), a.clone(), a.clone()])
-                    .rate_limited(10, SlowModeLimit::Global, vec![]);
+                let mut stream = iter(vec![a.clone(), a.clone(), a.clone()]).rate_limited(
+                    10,
+                    SlowModeLimit::Global,
+                    vec![],
+                );
                 assert_ready!(stream.poll_next_unpin(cx));
                 assert_pending!(stream.poll_next_unpin(cx));
 
@@ -425,8 +475,11 @@ mod test {
         task::mock(|cx| {
             tokio_test::clock::mock(|handle| {
                 let a = Limitable(Some("a".to_string()));
-                let mut stream =
-                    iter(vec![a.clone(), a.clone()]).rate_limited(10, SlowModeLimit::Global, vec![]);
+                let mut stream = iter(vec![a.clone(), a.clone()]).rate_limited(
+                    10,
+                    SlowModeLimit::Global,
+                    vec![],
+                );
                 stream.set_slow_mode("a", SlowModeLimit::Channel(10));
                 assert_ready!(stream.poll_next_unpin(cx));
                 handle.advance(Duration::from_secs(5));
@@ -434,6 +487,41 @@ mod test {
                 handle.advance(Duration::from_secs(5));
                 assert_ready_eq!(stream.poll_next_unpin(cx), Some(a));
                 assert_ready_eq!(stream.poll_next_unpin(cx), None);
+            });
+        });
+    }
+
+    #[test]
+    fn test_bucket1() {
+        task::mock(|cx| {
+            tokio_test::clock::mock(|handle| {
+                let mut b = &RateLimitBucket::new(10, Duration::from_secs(10));
+                for _ in 0..20 {
+                    assert_ready!(b.poll_unpin(cx));
+                    handle.advance(Duration::from_secs(2));
+                }
+            });
+        });
+    }
+
+    #[test]
+    fn test_bucket2() {
+        task::mock(|cx| {
+            tokio_test::clock::mock(|handle| {
+                let mut b = &RateLimitBucket::new(2, Duration::from_secs(10));
+                assert_ready!(b.poll_unpin(cx));
+
+                handle.advance(Duration::from_secs(3));
+                assert_ready!(b.poll_unpin(cx));
+                assert_pending!(b.poll_unpin(cx));
+
+                handle.advance(Duration::from_secs(7));
+                assert_ready!(b.poll_unpin(cx));
+                assert_pending!(b.poll_unpin(cx));
+
+                handle.advance(Duration::from_secs(3));
+                assert_ready!(b.poll_unpin(cx));
+                assert_pending!(b.poll_unpin(cx));
             });
         });
     }

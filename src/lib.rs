@@ -8,7 +8,7 @@
 //!
 //! use std::env;
 //! use std::error::Error;
-//! use tmi_rs::{TwitchClientBuilder, TwitchClient, futures_util::StreamExt};
+//! use tmi_rs::{TwitchClientBuilder, TwitchClient, futures_util::stream::StreamExt};
 //! use tmi_rs::event::{Event, ChannelMessageEventData};
 //!
 //! #[tokio::main]
@@ -74,6 +74,7 @@ use std::hash::Hash;
 pub use futures_channel;
 pub use futures_core;
 pub use futures_sink;
+pub use futures_util;
 
 pub use client::*;
 pub use errors::*;
