@@ -13,7 +13,6 @@ use futures_core::Future;
 use futures_util::FutureExt;
 use parking_lot::RwLock;
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
-use smallvec::SmallVec;
 use tokio_sync::semaphore::{Permit, Semaphore};
 use tokio_timer::clock::now;
 use tokio_timer::timer::Handle;
@@ -27,14 +26,13 @@ pub trait RateLimitExt<Item>: Stream {
     fn rate_limited(
         self,
         capacity: usize,
-        default_slow: SlowModeLimit,
-        default_buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>,
+        rate_limiter: &Arc<RateLimiter>,
     ) -> BufferedRateLimiter<Self, Item>
     where
         Self: Sized + Stream<Item = Item> + Unpin,
         Item: RateLimitable,
     {
-        BufferedRateLimiter::new(self, capacity, default_slow, default_buckets)
+        BufferedRateLimiter::new(self, capacity, rate_limiter)
     }
 }
 impl<Si, Item> RateLimitExt<Item> for Si where Si: Stream<Item = Item> {}
@@ -42,9 +40,40 @@ impl<Si, Item> RateLimitExt<Item> for Si where Si: Stream<Item = Item> {}
 /// Trait to apply to messages that contains information about which rate limits apply
 /// to the message
 pub trait RateLimitable {
-    /// Determines whether the global 1 second slow mode or a set channel slow mode applies
-    /// to the message
-    fn slow_mode_channel(&self) -> Option<&str>;
+    /// Should return a channel name, if available. If a channel is returned, applies the slow mode
+    /// and rate limit buckets configured for that channel
+    fn channel_limits(&self) -> Option<&str>;
+
+    /// Poll for sending the item using the given rate limiter instance
+    fn poll(&self, rate_limiter: &RateLimiter, cx: &mut Context<'_>) -> Poll<()> {
+        if let Some(channel) = self.channel_limits() {
+            rate_limiter.init_channel(channel);
+
+            let limits = rate_limiter.limits_map.read();
+            let buckets = rate_limiter.buckets.read();
+
+            let channel_limits = limits.get(channel).expect("Get channel rate limits");
+            let slow_ready = channel_limits.read().poll_slow_mode(cx).is_ready();
+            if !slow_ready {
+                return Poll::Pending;
+            }
+
+            let buckets_ready = channel_limits
+                .read()
+                .limit_buckets
+                .iter()
+                .filter_map(|&bucket_name| buckets.get(bucket_name))
+                .all(|mut bucket| (&mut bucket).poll_unpin(cx).is_ready());
+            if !buckets_ready {
+                return Poll::Pending;
+            }
+
+            Poll::Ready(())
+        } else {
+            // no limits apply, always return ready
+            Poll::Ready(())
+        }
+    }
 }
 
 /// Rate limiting buffered sink
@@ -53,11 +82,8 @@ pub trait RateLimitable {
 pub struct BufferedRateLimiter<St: Stream<Item = Item>, Item: RateLimitable> {
     stream: St,
     buf: VecDeque<Item>,
-    // Track capacity separately from the `VecDeque`, which may be rounded up
     capacity: usize,
-    limits_map: FnvHashMap<String, ChannelLimits>,
-    default_slow: SlowModeLimit,
-    default_buckets: SmallVec<[Arc<RateLimitBucket>; 5]>,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> Unpin for BufferedRateLimiter<St, Item> {}
@@ -66,130 +92,31 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
     unsafe_pinned!(stream: St);
     unsafe_unpinned!(buf: VecDeque<Item>);
     unsafe_unpinned!(capacity: usize);
-    unsafe_unpinned!(limits_map: FnvHashMap<String, ChannelLimits>);
 
-    pub(super) fn new(
-        stream: St,
-        capacity: usize,
-        default_slow: SlowModeLimit,
-        default_buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>,
-    ) -> Self {
+    pub(super) fn new(stream: St, capacity: usize, rate_limiter: &Arc<RateLimiter>) -> Self {
         BufferedRateLimiter {
             stream,
             buf: VecDeque::with_capacity(capacity),
             capacity,
-            limits_map: Default::default(),
-            default_slow,
-            default_buckets: SmallVec::from_iter(default_buckets),
+            rate_limiter: rate_limiter.clone(),
         }
     }
 
-    /// Configure slow mode rate limiting for a channel.
-    pub fn set_slow_mode(&mut self, channel: &str, limit: SlowModeLimit) {
-        if self.limits_map.contains_key(channel) {
-            self.limits_map
-                .get_mut(channel)
-                .unwrap()
-                .set_slow_mode(limit);
-        } else {
-            self.limits_map.insert(
-                channel.to_owned(),
-                ChannelLimits::new(limit, self.default_buckets.iter().cloned()),
-            );
-        }
-    }
-
-    /// Configure bucket based rate limiting for a channel.
-    pub fn set_limit_buckets(
-        &mut self,
-        channel: &str,
-        buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>,
-    ) {
-        if self.limits_map.contains_key(channel) {
-            self.limits_map
-                .get_mut(channel)
-                .unwrap()
-                .set_buckets(buckets);
-        } else {
-            self.limits_map.insert(
-                channel.to_owned(),
-                ChannelLimits::new(self.default_slow, buckets),
-            );
-        }
-    }
-
-    fn init_channel(self: Pin<&mut Self>, channel: &str) -> bool {
-        // if the channel was never queried before, insert the default setting
-        let BufferedRateLimiter {
-            ref default_slow,
-            ref default_buckets,
-            limits_map,
+    fn pop_ready_item(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Option<Item> {
+        let Self {
+            buf,
+            ref rate_limiter,
             ..
         } = Pin::into_inner(self);
-        if !limits_map.contains_key(channel) {
-            limits_map.insert(
-                channel.to_owned(),
-                ChannelLimits::new(*default_slow, default_buckets.iter().cloned()),
-            );
-        }
-
-        // check if a slow mode interval is set for the channel
-        limits_map
-            .get(channel)
-            .into_iter()
-            .any(|limits| limits.slow_mode_delay.is_some())
-    }
-
-    fn poll_channel_slowmode(
-        mut self: Pin<&mut Self>,
-        channel: &str,
-        cx: &mut Context<'_>,
-    ) -> Poll<()> {
-        self.as_mut().init_channel(channel);
-        self.as_mut()
-            .limits_map()
-            .get_mut(channel)
-            .and_then(|limits| limits.slow_mode_delay.as_mut())
-            .map(|delay| delay.poll_unpin(cx))
-            .unwrap_or_else(|| Poll::Ready(()))
-    }
-
-    fn pop_first_ready_item(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Option<Item> {
-        let Self {
-            buf, limits_map, ..
-        } = Pin::into_inner(self);
         let ready_item_idx = buf.iter().enumerate().find_map(|(i, item)| {
-            if let Some(channel) = item.slow_mode_channel() {
-                let ready = limits_map
-                    .get_mut(channel)
-                    .map(|limits| {
-                        let slow_ready = limits.poll_slow_mode(cx).is_ready();
-
-                        if slow_ready {
-                            Poll::Ready(())
-                        } else {
-                            Poll::Pending
-                        }
-                    })
-                    .unwrap_or_else(|| Poll::Ready(()));
-                if let Poll::Ready(_) = ready {
-                    return Some(i);
-                }
+            if item.poll(&**rate_limiter, cx).is_ready() {
+                Some(i)
+            } else {
+                None
             }
-            None
         });
 
         ready_item_idx.and_then(|i| buf.swap_remove_back(i))
-    }
-
-    fn reset_channel_delay(mut self: Pin<&mut Self>, channel: &str) {
-        if let Some(limits) = self.as_mut().limits_map.get_mut(channel) {
-            if let Some(delay) = limits.slow_mode.new_delay() {
-                limits.slow_mode_delay.replace(delay);
-            } else {
-                limits.slow_mode_delay.take();
-            }
-        }
     }
 
     /// Get a shared reference to the inner sink.
@@ -226,24 +153,18 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<S::Item>> {
         // return any ready items in the buffer if available
         if !self.as_ref().buf.is_empty() {
-            let ready_item = self.as_mut().pop_first_ready_item(cx);
+            let ready_item = self.as_mut().pop_ready_item(cx);
             if ready_item.is_some() {
                 return Poll::Ready(ready_item);
             }
         }
         match self.as_mut().stream().poll_next(cx) {
             Poll::Ready(Some(item)) => {
-                if let Some(channel) = item.slow_mode_channel() {
-                    let poll_channel = self.as_mut().poll_channel_slowmode(channel, cx);
-                    if poll_channel.is_ready() {
-                        self.as_mut().reset_channel_delay(channel);
-                        Poll::Ready(Some(item))
-                    } else {
-                        self.as_mut().buf().push_back(item);
-                        Poll::Pending
-                    }
-                } else {
+                if item.poll(&*self.rate_limiter, cx).is_ready() {
                     Poll::Ready(Some(item))
+                } else {
+                    self.as_mut().buf().push_back(item);
+                    Poll::Pending
                 }
             }
             Poll::Ready(None) => {
@@ -268,7 +189,135 @@ where
     Item: RateLimitable,
 {
     fn is_terminated(&self) -> bool {
-        self.stream.is_terminated()
+        self.stream.is_terminated() && self.buf.is_empty()
+    }
+}
+
+/// Configuration for a rate limiter
+#[derive(Debug, Clone)]
+pub struct RateLimiterConfig {
+    /// The buckets used for global rate limiting
+    pub buckets: FnvHashMap<&'static str, RateLimitBucketConfig>,
+    /// Default configuration for slow mode, defaults to the global 1 second slow mode
+    pub default_slow: SlowModeLimit,
+    /// Default bucket names that apply to a message
+    pub default_buckets: Vec<&'static str>,
+}
+
+impl Default for RateLimiterConfig {
+    fn default() -> Self {
+        RateLimiterConfig {
+            buckets: {
+                let mut map = FnvHashMap::default();
+                map.insert(
+                    "privmsg-moderator",
+                    RateLimitBucketConfig::new(100, Duration::from_secs(30)),
+                );
+                map.insert(
+                    "privmsg",
+                    RateLimitBucketConfig::new(20, Duration::from_secs(30)),
+                );
+                map
+            },
+            default_slow: SlowModeLimit::Global,
+            default_buckets: vec!["privmsg", "privmsg-moderator"],
+        }
+    }
+}
+
+impl RateLimiterConfig {
+    /// Initialize a rate limiter with the rate limit buckets set for an account that is a known bot
+    pub fn known_bot() -> Self {
+        RateLimiterConfig {
+            buckets: {
+                let mut map = FnvHashMap::default();
+                map.insert(
+                    "privmsg-moderator",
+                    RateLimitBucketConfig::new(100, Duration::from_secs(30)),
+                );
+                map.insert(
+                    "privmsg",
+                    RateLimitBucketConfig::new(50, Duration::from_secs(30)),
+                );
+                map
+            },
+            default_slow: SlowModeLimit::Global,
+            default_buckets: vec!["privmsg", "privmsg-moderator"],
+        }
+    }
+
+    /// Initialize a rate limiter with the rate limit buckets set for an account that is a verified bot
+    pub fn verified_bot() -> Self {
+        RateLimiterConfig {
+            buckets: {
+                let mut map = FnvHashMap::default();
+                map.insert(
+                    "privmsg-moderator",
+                    RateLimitBucketConfig::new(7500, Duration::from_secs(30)),
+                );
+                map.insert(
+                    "privmsg",
+                    RateLimitBucketConfig::new(7500, Duration::from_secs(30)),
+                );
+                map
+            },
+            default_slow: SlowModeLimit::Global,
+            default_buckets: vec!["privmsg", "privmsg-moderator"],
+        }
+    }
+}
+
+/// A reusable, thread-safe rate limiter that allows "slow mode" and bucket based rate limiting. It
+/// can be reconfigured at runtime, although this requires locking/mutexes so it shouldn't be done
+/// constantly to avoid performance issues.
+///
+/// Constructed using `From<RateLimiterConfig>`
+#[derive(Debug)]
+pub struct RateLimiter {
+    buckets: RwLock<FnvHashMap<&'static str, RateLimitBucket>>,
+    limits_map: RwLock<FnvHashMap<String, RwLock<ChannelLimits>>>,
+    default_slow: SlowModeLimit,
+    default_buckets: Vec<&'static str>,
+}
+
+impl From<RateLimiterConfig> for RateLimiter {
+    fn from(cfg: RateLimiterConfig) -> Self {
+        RateLimiter {
+            buckets: RwLock::new(
+                cfg.buckets
+                    .into_iter()
+                    .map(|(key, cfg)| (key, RateLimitBucket::from(cfg)))
+                    .collect(),
+            ),
+            limits_map: Default::default(),
+            default_slow: cfg.default_slow,
+            default_buckets: cfg.default_buckets,
+        }
+    }
+}
+
+impl RateLimiter {
+    /// Configure slow mode rate limiting for a channel.
+    pub fn set_slow_mode(&self, channel: &str, limit: SlowModeLimit) {
+        let mut map = self.limits_map.write();
+        if map.contains_key(channel) {
+            map.get_mut(channel).unwrap().write().set_slow_mode(limit);
+        } else {
+            map.insert(
+                channel.to_owned(),
+                ChannelLimits::new(limit, self.default_buckets.iter().cloned()).into(),
+            );
+        }
+    }
+
+    fn init_channel(&self, channel: &str) {
+        // if the channel was never queried before, insert the default setting
+        if !self.limits_map.read().contains_key(channel) {
+            self.limits_map.write().insert(
+                channel.to_owned(),
+                ChannelLimits::new(self.default_slow, self.default_buckets.iter().cloned()).into(),
+            );
+        }
     }
 }
 
@@ -276,68 +325,60 @@ where
 #[derive(Debug)]
 pub struct ChannelLimits {
     slow_mode: SlowModeLimit,
-    slow_mode_delay: Option<Delay>,
-    limit_buckets: SmallVec<[Arc<RateLimitBucket>; 5]>,
+    slow_mode_delay: RwLock<Option<Delay>>,
+    limit_buckets: Vec<&'static str>,
 }
 
 impl ChannelLimits {
     /// New channel limit instance
-    pub fn new(
-        slow: SlowModeLimit,
-        limit_buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>,
-    ) -> Self {
+    pub fn new(slow: SlowModeLimit, limit_buckets: impl IntoIterator<Item = &'static str>) -> Self {
         ChannelLimits {
             slow_mode: slow,
-            slow_mode_delay: None,
-            limit_buckets: SmallVec::from_iter(limit_buckets),
+            slow_mode_delay: RwLock::new(None),
+            limit_buckets: Vec::from_iter(limit_buckets),
         }
     }
 
     /// Set the slow mode interval for this channel
     pub fn set_slow_mode(&mut self, slow: SlowModeLimit) {
+        let mut delay = self.slow_mode_delay.write();
         self.slow_mode = slow;
-        self.slow_mode_delay = None;
+        delay.take();
     }
 
     /// Set the rate limit buckets applied to this channel
-    pub fn set_buckets(&mut self, buckets: impl IntoIterator<Item = Arc<RateLimitBucket>>) {
+    pub fn set_buckets(&mut self, buckets: impl IntoIterator<Item = &'static str>) {
         self.limit_buckets.truncate(0);
         self.limit_buckets.extend(buckets)
     }
 
-    fn reset_slow_mode(&mut self) {
+    #[inline]
+    fn reset_slow_mode(&self) {
         if let Some(delay) = self.slow_mode.new_delay() {
-            self.slow_mode_delay.replace(delay);
+            self.slow_mode_delay.write().replace(delay);
+        } else {
+            self.slow_mode_delay.write().take();
         }
     }
 
-    fn poll_slow_mode(&mut self, cx: &mut Context<'_>) -> Poll<()> {
-        if let Some(delay) = &mut self.slow_mode_delay {
-            match delay.poll_unpin(cx) {
-                Poll::Ready(_) => {
-                    if let Some(deadline) = self.slow_mode.next_deadline() {
-                        delay.reset(deadline)
+    fn poll_slow_mode(&self, cx: &mut Context<'_>) -> Poll<()> {
+        if self.slow_mode_delay.read().is_some() {
+            if let Some(delay) = self.slow_mode_delay.write().as_mut() {
+                match delay.poll_unpin(cx) {
+                    Poll::Ready(_) => {
+                        if let Some(deadline) = self.slow_mode.next_deadline() {
+                            delay.reset(deadline)
+                        }
+                        Poll::Ready(())
                     }
-                    Poll::Ready(())
+                    Poll::Pending => Poll::Pending,
                 }
-                Poll::Pending => Poll::Pending,
+            } else {
+                unreachable!()
             }
         } else {
             self.reset_slow_mode();
             Poll::Ready(())
-        }
-    }
-
-    fn poll_buckets(&mut self, cx: &mut Context<'_>) -> Poll<()> {
-        if self.limit_buckets.iter().all(|bucket| bucket.is_ready()) {
-            for bucket in &self.limit_buckets {
-                if (&**bucket).poll_unpin(cx).is_pending() {
-                    return Poll::Pending;
-                }
-            }
-            Poll::Ready(())
-        } else {
-            Poll::Pending
         }
     }
 }
@@ -370,26 +411,49 @@ impl SlowModeLimit {
     }
 }
 
-/// Semaphore based rate limit bucket with configurable refill delay and capacity
+/// Semaphore based rate limit bucket with configurable refill delay and capacity. The semaphore is
+/// initialized with the given capacity. Before a message is sent, the bucket is polled and if
+/// capacity is available, a permit is taken from the semaphore. The permit is released when the refill
+/// delay has elapsed. The refill times are kept in an internal ring buffer and the semaphore is
+/// refilled before every poll.
+///
+/// Constructed using `From<RateLimitBucketConfig>`.
 #[derive(Debug)]
 pub struct RateLimitBucket {
-    refill_delay: Duration,
-    capacity: usize,
+    cfg: RateLimitBucketConfig,
     refill_queue: RwLock<VecDeque<(Instant, Permit)>>,
     semaphore: Semaphore,
 }
 
-impl RateLimitBucket {
-    /// Create a new rate limit bucket with the given capacity and refill rate
+/// Configuration for a rate limiting bucket.
+#[derive(Debug, Clone)]
+pub struct RateLimitBucketConfig {
+    refill_delay: Duration,
+    capacity: usize,
+}
+
+impl RateLimitBucketConfig {
+    /// Create a new rate limiting bucket configuration
     pub fn new(capacity: usize, refill_delay: Duration) -> Self {
-        RateLimitBucket {
+        RateLimitBucketConfig {
             refill_delay,
-            capacity: capacity,
-            refill_queue: RwLock::new(VecDeque::with_capacity(capacity)),
-            semaphore: Semaphore::new(capacity),
+            capacity,
         }
     }
+}
 
+impl From<RateLimitBucketConfig> for RateLimitBucket {
+    fn from(cfg: RateLimitBucketConfig) -> Self {
+        let cap = cfg.capacity;
+        RateLimitBucket {
+            cfg,
+            refill_queue: RwLock::new(VecDeque::with_capacity(cap)),
+            semaphore: Semaphore::new(cap),
+        }
+    }
+}
+
+impl RateLimitBucket {
     /// Returns whether there are currently any messages left in the contingent
     pub fn is_ready(&self) -> bool {
         self.semaphore.available_permits() > 0
@@ -415,7 +479,7 @@ impl Future for &RateLimitBucket {
             Ok(_) => {
                 self.refill_queue
                     .write()
-                    .push_back((now() + self.refill_delay, permit));
+                    .push_back((now() + self.cfg.refill_delay, permit));
                 Poll::Ready(())
             }
             Err(_) => Poll::Pending,
@@ -431,12 +495,16 @@ mod test {
     use futures_util::{FutureExt, StreamExt};
     use tokio_test::{assert_pending, assert_ready, assert_ready_eq, task};
 
-    use crate::rate_limits::{RateLimitBucket, RateLimitExt, RateLimitable, SlowModeLimit};
+    use crate::rate_limits::{
+        RateLimitBucket, RateLimitBucketConfig, RateLimitExt, RateLimitable, RateLimiterConfig,
+        SlowModeLimit,
+    };
+    use std::sync::Arc;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct Limitable(Option<String>);
     impl RateLimitable for Limitable {
-        fn slow_mode_channel(&self) -> Option<&str> {
+        fn channel_limits(&self) -> Option<&str> {
             self.0.as_ref().map(AsRef::as_ref)
         }
     }
@@ -445,12 +513,10 @@ mod test {
     fn test_default_slowmode() {
         task::mock(|cx| {
             tokio_test::clock::mock(|handle| {
+                let rate_limiter = Arc::new(RateLimiterConfig::default().into());
                 let a = Limitable(Some("a".to_string()));
-                let mut stream = iter(vec![a.clone(), a.clone(), a.clone()]).rate_limited(
-                    10,
-                    SlowModeLimit::Global,
-                    vec![],
-                );
+                let mut stream =
+                    iter(vec![a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
                 assert_ready!(stream.poll_next_unpin(cx));
                 assert_pending!(stream.poll_next_unpin(cx));
 
@@ -471,16 +537,33 @@ mod test {
     }
 
     #[test]
+    fn test_change_limits() {
+        task::mock(|cx| {
+            tokio_test::clock::mock(|handle| {
+                let rate_limiter = Arc::new(RateLimiterConfig::default().into());
+                let a = Limitable(Some("a".to_string()));
+                let mut stream =
+                    iter(vec![a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
+                rate_limiter.set_slow_mode("a", SlowModeLimit::Channel(10));
+                assert_ready!(stream.poll_next_unpin(cx));
+                assert_pending!(stream.poll_next_unpin(cx));
+
+                handle.advance(Duration::from_millis(1100));
+                rate_limiter.set_slow_mode("a", SlowModeLimit::Channel(5));
+
+                assert_ready_eq!(stream.poll_next_unpin(cx), Some(a));
+            });
+        });
+    }
+
+    #[test]
     fn test_custom_slowmode() {
         task::mock(|cx| {
             tokio_test::clock::mock(|handle| {
                 let a = Limitable(Some("a".to_string()));
-                let mut stream = iter(vec![a.clone(), a.clone()]).rate_limited(
-                    10,
-                    SlowModeLimit::Global,
-                    vec![],
-                );
-                stream.set_slow_mode("a", SlowModeLimit::Channel(10));
+                let rate_limiter = Arc::new(RateLimiterConfig::default().into());
+                let mut stream = iter(vec![a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
+                rate_limiter.set_slow_mode("a", SlowModeLimit::Channel(10));
                 assert_ready!(stream.poll_next_unpin(cx));
                 handle.advance(Duration::from_secs(5));
                 assert_pending!(stream.poll_next_unpin(cx));
@@ -495,7 +578,8 @@ mod test {
     fn test_bucket1() {
         task::mock(|cx| {
             tokio_test::clock::mock(|handle| {
-                let mut b = &RateLimitBucket::new(10, Duration::from_secs(10));
+                let mut b: &RateLimitBucket =
+                    &RateLimitBucketConfig::new(10, Duration::from_secs(10)).into();
                 for _ in 0..20 {
                     assert_ready!(b.poll_unpin(cx));
                     handle.advance(Duration::from_secs(2));
@@ -508,7 +592,8 @@ mod test {
     fn test_bucket2() {
         task::mock(|cx| {
             tokio_test::clock::mock(|handle| {
-                let mut b = &RateLimitBucket::new(2, Duration::from_secs(10));
+                let mut b: &RateLimitBucket =
+                    &RateLimitBucketConfig::new(2, Duration::from_secs(10)).into();
                 assert_ready!(b.poll_unpin(cx));
 
                 handle.advance(Duration::from_secs(3));

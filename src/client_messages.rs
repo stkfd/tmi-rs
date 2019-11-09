@@ -58,7 +58,7 @@ impl<T: StringRef> Into<Message> for ClientMessage<T> {
 }
 
 impl<T: StringRef> RateLimitable for &ClientMessage<T> {
-    fn slow_mode_channel(&self) -> Option<&str> {
+    fn channel_limits(&self) -> Option<&str> {
         match self {
             ClientMessage::PrivMsg { channel, .. } => Some(channel.borrow()),
             _ => None,
@@ -67,7 +67,7 @@ impl<T: StringRef> RateLimitable for &ClientMessage<T> {
 }
 
 impl<T: StringRef> RateLimitable for ClientMessage<T> {
-    fn slow_mode_channel(&self) -> Option<&str> {
+    fn channel_limits(&self) -> Option<&str> {
         match self {
             ClientMessage::PrivMsg { channel, .. } => Some(channel.borrow()),
             _ => None,

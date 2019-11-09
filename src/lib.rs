@@ -8,18 +8,19 @@
 //!
 //! use std::env;
 //! use std::error::Error;
-//! use tmi_rs::{TwitchClientBuilder, TwitchClient, futures_util::stream::StreamExt};
+//! use tmi_rs::{TwitchClientConfigBuilder, TwitchClient, futures_util::stream::StreamExt};
 //! use tmi_rs::event::{Event, ChannelMessageEventData};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn Error>> {
 //!     env_logger::init();
 //!     let channel = env::var("TWITCH_CHANNEL")?;
-//!     let client: TwitchClient = TwitchClientBuilder::default()
+//!     let client: TwitchClient = TwitchClientConfigBuilder::default()
 //!         .username(env::var("TWITCH_USERNAME")?)
 //!         .token(env::var("TWITCH_AUTH")?)
 //!         .cap_membership(true)
-//!         .build()?;
+//!         .build()?
+//!         .into();
 //!     let (mut sender, mut receiver) = client.connect().await?;
 //!
 //!     sender.join(channel.clone()).await?;
