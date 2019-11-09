@@ -22,11 +22,14 @@ tokio-io = "0.2.0-alpha.6"
 tokio-executor = "0.2.0-alpha.6"
 tokio-net = "0.2.0-alpha.6"
 tokio-tls = "0.3.0-alpha.6"
+tokio-timer = "0.3.0-alpha.6"
+tokio-sync = "0.2.0-alpha.6"
 tokio-tungstenite = { git = "https://github.com/dbcfd/tokio-tungstenite.git", rev = "0c2779965dc50b19256ef2d73edb82dd5db3e0de", features=["connect", "tls"] }
 url = "2.1.0"
 nom = "5.0.1"
 smallvec = "0.6.10"
 future-bus = "0.1.0"
+parking_lot = "0.9.0"
 
 [lib]
 name = "tmi_rs"
@@ -34,3 +37,5 @@ name = "tmi_rs"
 [dev-dependencies]
 env_logger = "0.7.1"
 tokio = "0.2.0-alpha.6"
+futures-preview = "0.3.0-alpha.19"
+tokio-test = "0.2.0-alpha.6"

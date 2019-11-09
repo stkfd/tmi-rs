@@ -8,7 +8,7 @@
 //!
 //! use std::env;
 //! use std::error::Error;
-//! use tmi_rs::{TwitchClientBuilder, TwitchClient, futures_util::StreamExt};
+//! use tmi_rs::{TwitchClientBuilder, TwitchClient, futures_util::stream::StreamExt};
 //! use tmi_rs::event::{Event, ChannelMessageEventData};
 //!
 //! #[tokio::main]
@@ -48,7 +48,6 @@
 //! }
 //! ```
 
-#![feature(async_closure)]
 #![deny(
     unused_must_use,
     unused_mut,
@@ -87,6 +86,7 @@ mod errors;
 pub mod event;
 pub mod irc;
 pub mod irc_constants;
+pub mod rate_limits;
 pub mod selectors;
 mod sender;
 pub(crate) mod util;
