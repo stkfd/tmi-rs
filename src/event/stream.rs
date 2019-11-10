@@ -2,7 +2,6 @@ use core::fmt;
 use core::pin::Pin;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
-use std::sync::Arc;
 
 use futures_core::{stream::FusedStream, task::Context, Poll, Stream};
 use futures_sink::Sink;
@@ -95,14 +94,14 @@ impl<St> Stream for TwitchChatStream<St>
 where
     St: Stream<Item = Result<Message, WsError>> + Unpin,
 {
-    type Item = Arc<Result<Event<String>, Error>>;
+    type Item = Result<Event<String>, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let unpin_self = Pin::into_inner(self);
         // if buffer contains any messages, return directly
         if let Some(buffer) = &mut unpin_self.buffer {
             if !buffer.is_empty() {
-                return Poll::Ready(Some(Arc::new(buffer.remove(buffer.len() - 1))));
+                return Poll::Ready(Some(buffer.remove(buffer.len() - 1)));
             }
         }
 
@@ -116,7 +115,7 @@ where
                 if let Some(events) = result {
                     unpin_self.buffer.replace(events);
                     if let Some(buffer) = &mut unpin_self.buffer {
-                        Poll::Ready(Some(Arc::new(buffer.remove(buffer.len() - 1))))
+                        Poll::Ready(Some(buffer.remove(buffer.len() - 1)))
                     } else {
                         Poll::Pending
                     }

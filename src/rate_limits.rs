@@ -323,15 +323,19 @@ impl RateLimiter {
             .iter()
             .enumerate()
             .find_map(|(idx, b)| if *b == "privmsg" { Some(idx) } else { None });
-        if is_mod && non_privileged_bucket.is_some() {
-            info!("Applying moderator rate limits in channel {}.", channel);
-            limits
-                .write()
-                .limit_buckets
-                .swap_remove(non_privileged_bucket.unwrap());
-        } else if !is_mod && non_privileged_bucket.is_none() {
-            info!("Applying non-moderator rate limits in channel {}.", channel);
-            limits.write().limit_buckets.push("privmsg");
+        match non_privileged_bucket {
+            Some(non_privileged_bucket) if is_mod => {
+                info!("Applying moderator rate limits in channel {}.", channel);
+                limits
+                    .write()
+                    .limit_buckets
+                    .swap_remove(non_privileged_bucket);
+            }
+            None if !is_mod => {
+                info!("Applying non-moderator rate limits in channel {}.", channel);
+                limits.write().limit_buckets.push("privmsg");
+            }
+            _ => {}
         }
     }
 

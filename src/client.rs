@@ -71,22 +71,13 @@ impl From<TwitchClientConfig> for TwitchClient {
     }
 }
 
-type ChatReceiver = BusSubscriber<
-    Arc<Result<Event<String>, Error>>,
-    mpsc::Sender<Arc<Result<Event<String>, Error>>>,
-    mpsc::Receiver<Arc<Result<Event<String>, Error>>>,
->;
-
 impl TwitchClient {
     /// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
     /// to block until the connection is closed.
     pub async fn connect(
         &self,
     ) -> Result<
-        (
-            TwitchChatSender<mpsc::Sender<ClientMessage<String>>>,
-            ChatReceiver,
-        ),
+        TwitchChatConnection,
         Error,
     > {
         debug!("Connecting to {}", self.url);
@@ -98,14 +89,31 @@ impl TwitchClient {
             }
         })?;
 
-        let (mut ws_sink, mut ws_recv) = TwitchChatStream::new(ws).split::<Message>();
-        let mut event_bus = ::future_bus::bounded(100);
-        let event_receiver = event_bus.subscribe();
+        let (mut ws_sink, ws_recv) = TwitchChatStream::new(ws).split::<Message>();
+        let mut message_bus = ::future_bus::bounded::<Arc<Event<String>>>(100);
+        let mut error_bus = ::future_bus::bounded::<Arc<Error>>(20);
+        let message_receiver = message_bus.subscribe();
+        let error_receiver = error_bus.subscribe();
         let (client_sender, client_recv) = mpsc::channel::<ClientMessage<String>>(100);
         let mut sender = TwitchChatSender::new(client_sender);
 
-        tokio_executor::spawn(async move {
-            event_bus.send_all(&mut ws_recv).await.unwrap();
+        tokio_executor::spawn(async {
+            let mut ws_recv = ws_recv;
+            let mut message_bus = message_bus;
+            let mut error_bus = error_bus;
+            while let Some(result) = ws_recv.next().await {
+                let send_result = match result {
+                    Ok(event) => {
+                        message_bus.send(Arc::new(event)).await
+                    },
+                    Err(err) => {
+                        error_bus.send(Arc::new(err)).await
+                    },
+                };
+                if let Err(err) = send_result {
+                    error!("Internal channel error. Couldn't pass message. {}", err);
+                }
+            }
         });
 
         let rate_limiter = self.rate_limiter.clone();
@@ -117,18 +125,18 @@ impl TwitchClient {
         });
 
         // do any internal message handling like rate limit detection and ping pong
-        let internal_receiver = event_receiver.try_clone().expect("Get internal receiver");
+        let internal_receiver = message_receiver.try_clone().expect("Get internal receiver");
         let mut internal_sender = sender.clone();
         let rate_limiter = self.rate_limiter.clone();
         tokio_executor::spawn(async move {
             let mut responses =
-                internal_receiver.filter_map(|e: Arc<Result<Event<String>, Error>>| {
+                internal_receiver.filter_map(|e: Arc<Event<String>>| {
                     futures_util::future::ready(match *e {
-                        Ok(Event::Ping(_)) => Some(ClientMessage::<String>::Pong),
-                        Ok(Event::UserState(ref event)) => {
+                        Event::Ping(_) => Some(ClientMessage::<String>::Pong),
+                        Event::UserState(ref event) => {
                             let badges = event.badges().unwrap();
                             let is_mod = badges.into_iter().any(|badge| {
-                                ["moderator", "broadcaster"].contains(&badge.badge)
+                                ["moderator", "broadcaster", "vip"].contains(&badge.badge)
                             });
                             rate_limiter.update_mod_status(event.channel(), is_mod);
                             None
@@ -153,11 +161,13 @@ impl TwitchClient {
         sender
             .send(ClientMessage::<String>::CapRequest(capabilities))
             .await?;
-        sender
-            .login(self.username.clone(), self.token.clone())
-            .await?;
+        sender.send_all(&mut ClientMessage::login(self.username.clone(), self.token.clone())).await?;
 
-        Ok((sender, event_receiver))
+        Ok(TwitchChatConnection {
+            receiver: message_receiver,
+            error_receiver,
+            sender: sender.clone()
+        })
     }
 
     /// Get the rate limiter used for this client, can be used to change the rate limiting configuration
@@ -165,4 +175,29 @@ impl TwitchClient {
     pub fn rate_limiter(&self) -> &Arc<RateLimiter> {
         &self.rate_limiter
     }
+}
+
+type ChatReceiver = BusSubscriber<
+    Arc<Event<String>>,
+    mpsc::Sender<Arc<Event<String>>>,
+    mpsc::Receiver<Arc<Event<String>>>,
+>;
+
+type ErrorReceiver = BusSubscriber<
+    Arc<Error>,
+    mpsc::Sender<Arc<Error>>,
+    mpsc::Receiver<Arc<Error>>,
+>;
+
+type ChatSender = TwitchChatSender<mpsc::Sender<ClientMessage<String>>>;
+
+/// Contains the Streams and Sinks associated with an underlying websocket connection. They
+/// can be cloned freely to be shared across different tasks and threads.
+pub struct TwitchChatConnection {
+    /// Receiver for chat messages
+    pub receiver: ChatReceiver,
+    /// Receiver for connection errors
+    pub error_receiver: ErrorReceiver,
+    /// Sender for commands/messages
+    pub sender: ChatSender,
 }
