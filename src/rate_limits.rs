@@ -310,6 +310,31 @@ impl RateLimiter {
         }
     }
 
+    /// Update the rate limiting buckets if necessary, when the user gains or loses mod status in
+    /// a channel
+    pub fn update_mod_status(&self, channel: &str, is_mod: bool) {
+        self.init_channel(channel);
+
+        let limits_map = self.limits_map.read();
+        let limits = limits_map.get(channel).unwrap();
+        let non_privileged_bucket = limits
+            .read()
+            .limit_buckets
+            .iter()
+            .enumerate()
+            .find_map(|(idx, b)| if *b == "privmsg" { Some(idx) } else { None });
+        if is_mod && non_privileged_bucket.is_some() {
+            info!("Applying moderator rate limits in channel {}.", channel);
+            limits
+                .write()
+                .limit_buckets
+                .swap_remove(non_privileged_bucket.unwrap());
+        } else if !is_mod && non_privileged_bucket.is_none() {
+            info!("Applying non-moderator rate limits in channel {}.", channel);
+            limits.write().limit_buckets.push("privmsg");
+        }
+    }
+
     fn init_channel(&self, channel: &str) {
         // if the channel was never queried before, insert the default setting
         if !self.limits_map.read().contains_key(channel) {

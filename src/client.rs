@@ -10,7 +10,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
 use crate::client_messages::{Capability, ClientMessage};
-use crate::event::{Event, TwitchChatStream};
+use crate::event::tags::BadgeTags;
+use crate::event::{ChannelEventData, Event, TwitchChatStream};
 use crate::rate_limits::{RateLimitExt, RateLimiter, RateLimiterConfig};
 use crate::{Error, TwitchChatSender};
 
@@ -109,27 +110,34 @@ impl TwitchClient {
 
         let rate_limiter = self.rate_limiter.clone();
         tokio_executor::spawn(async move {
-            let mut messages = client_recv.rate_limited(200, &rate_limiter).map(|msg| {
-                debug!("msg: {}", msg.to_string());
-                Message::from(msg.to_string())
-            });
+            let mut messages = client_recv
+                .rate_limited(200, &rate_limiter)
+                .map(|msg| Message::from(msg.to_string()));
             ws_sink.send_all(&mut messages).await.unwrap();
         });
 
         // do any internal message handling like rate limit detection and ping pong
         let internal_receiver = event_receiver.try_clone().expect("Get internal receiver");
-        let internal_sender = sender.clone();
-        tokio_executor::spawn(async {
+        let mut internal_sender = sender.clone();
+        let rate_limiter = self.rate_limiter.clone();
+        tokio_executor::spawn(async move {
             let mut responses =
                 internal_receiver.filter_map(|e: Arc<Result<Event<String>, Error>>| {
                     futures_util::future::ready(match *e {
                         Ok(Event::Ping(_)) => Some(ClientMessage::<String>::Pong),
+                        Ok(Event::UserState(ref event)) => {
+                            let badges = event.badges().unwrap();
+                            let is_mod = badges.into_iter().any(|badge| {
+                                ["moderator", "broadcaster"].contains(&badge.badge)
+                            });
+                            rate_limiter.update_mod_status(event.channel(), is_mod);
+                            None
+                        }
                         _ => None,
                     })
                 });
 
-            let mut snd = internal_sender;
-            snd.send_all(&mut responses).await.unwrap();
+            internal_sender.send_all(&mut responses).await.unwrap();
         });
 
         let mut capabilities = Vec::with_capacity(3);

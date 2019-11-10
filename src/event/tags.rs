@@ -369,6 +369,7 @@ pub trait WhisperTags<T: StringRef>: MessageTags<T> {
 impl<T: StringRef> WhisperTags<T> for EventData<T, WhisperEvent<T>> {}
 
 /// Badges from the `badges` and `badges-info` tags
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Badge<T: StringRef> {
     /// Badge name
     pub badge: T,
@@ -382,8 +383,36 @@ fn parse_badges<'a>(input: &'a str, tag_name: &str) -> Result<Vec<Badge<&'a str>
         .map_err(|_| Error::TagParseError(tag_name.to_string(), input.to_string()))
 }
 
+#[test]
+fn test_badge_parsing() {
+    assert_eq!(
+        parse_badges("broadcaster/1", "badges").unwrap(),
+        vec![Badge {
+            badge: "broadcaster",
+            version: "1"
+        }]
+    );
+}
+
+#[test]
+fn test_badge_parsing_2() {
+    assert_eq!(
+        parse_badges("broadcaster/1,subscriber/1", "badges").unwrap(),
+        vec![
+            Badge {
+                badge: "broadcaster",
+                version: "1"
+            },
+            Badge {
+                badge: "subscriber",
+                version: "1"
+            }
+        ]
+    );
+}
+
 fn parse_badge(input: &str) -> IResult<&str, Badge<&str>> {
-    let (remaining, (badge, _, version)) = tuple((alpha1, char('/'), alpha1))(input)?;
+    let (remaining, (badge, _, version)) = tuple((alpha1, char('/'), digit1))(input)?;
     Ok((remaining, Badge { badge, version }))
 }
 
