@@ -2,8 +2,7 @@
 
 use std::pin::Pin;
 
-use futures_core::task::Context;
-use futures_core::Poll;
+use futures_core::task::{Context, Poll};
 use futures_sink::Sink;
 
 use crate::client_messages::ClientMessage;

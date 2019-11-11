@@ -109,10 +109,10 @@ impl TwitchClient {
 
         let rate_limiter = self.rate_limiter.clone();
         tokio_executor::spawn(async move {
-            let mut messages = client_recv
+            let messages = client_recv
                 .rate_limited(200, &rate_limiter)
                 .map(|msg| Message::from(msg.to_string()));
-            ws_sink.send_all(&mut messages).await.unwrap();
+            messages.map(Ok).forward(&mut ws_sink).await.unwrap();
         });
 
         // do any internal message handling like rate limit detection and ping pong
@@ -120,7 +120,7 @@ impl TwitchClient {
         let mut internal_sender = sender.clone();
         let rate_limiter = self.rate_limiter.clone();
         tokio_executor::spawn(async move {
-            let mut responses = internal_receiver.filter_map(|e: Arc<Event<String>>| {
+            let responses = internal_receiver.filter_map(|e: Arc<Event<String>>| {
                 futures_util::future::ready(match *e {
                     Event::Ping(_) => Some(ClientMessage::<String>::Pong),
                     Event::UserState(ref event) => {
@@ -135,7 +135,7 @@ impl TwitchClient {
                 })
             });
 
-            internal_sender.send_all(&mut responses).await.unwrap();
+            responses.map(Ok).forward(&mut internal_sender).await.unwrap();
         });
 
         let mut capabilities = Vec::with_capacity(3);
@@ -151,12 +151,10 @@ impl TwitchClient {
         sender
             .send(ClientMessage::<String>::CapRequest(capabilities))
             .await?;
-        sender
-            .send_all(&mut ClientMessage::login(
-                self.username.clone(),
-                self.token.clone(),
-            ))
-            .await?;
+        sender.send_all(&mut ClientMessage::login(
+            self.username.clone(),
+            self.token.clone(),
+        ).map(Ok)).await?;
 
         Ok(TwitchChatConnection {
             receiver: message_receiver,

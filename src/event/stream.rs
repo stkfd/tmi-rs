@@ -3,7 +3,9 @@ use core::pin::Pin;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 
-use futures_core::{stream::FusedStream, task::Context, Poll, Stream};
+use futures_core::stream::FusedStream;
+use futures_core::task::{Context, Poll};
+use futures_core::Stream;
 use futures_sink::Sink;
 use smallvec::SmallVec;
 use tokio_tungstenite::tungstenite::error::Error as WsError;
