@@ -3,6 +3,7 @@ name = "tmi-rs"
 description = "Websocket based asynchronous connector to Twitch chat"
 categories = ["asynchronous", "twitch", "websocket", "irc"]
 keywords = ["twitch", "chat", "irc", "websockets", "async", "futures"]
+repository = "https://github.com/cere42/tmi-rs"
 version = "0.1.0"
 authors = ["cerebellum42 <cere@fastmail.fm>"]
 edition = "2018"
