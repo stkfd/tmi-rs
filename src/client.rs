@@ -74,12 +74,7 @@ impl From<TwitchClientConfig> for TwitchClient {
 impl TwitchClient {
     /// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
     /// to block until the connection is closed.
-    pub async fn connect(
-        &self,
-    ) -> Result<
-        TwitchChatConnection,
-        Error,
-    > {
+    pub async fn connect(&self) -> Result<TwitchChatConnection, Error> {
         debug!("Connecting to {}", self.url);
         let (ws, _) = connect_async(self.url.clone()).await.map_err(|e| {
             error!("Connection to {} failed", self.url);
@@ -103,12 +98,8 @@ impl TwitchClient {
             let mut error_bus = error_bus;
             while let Some(result) = ws_recv.next().await {
                 let send_result = match result {
-                    Ok(event) => {
-                        message_bus.send(Arc::new(event)).await
-                    },
-                    Err(err) => {
-                        error_bus.send(Arc::new(err)).await
-                    },
+                    Ok(event) => message_bus.send(Arc::new(event)).await,
+                    Err(err) => error_bus.send(Arc::new(err)).await,
                 };
                 if let Err(err) = send_result {
                     error!("Internal channel error. Couldn't pass message. {}", err);
@@ -129,21 +120,20 @@ impl TwitchClient {
         let mut internal_sender = sender.clone();
         let rate_limiter = self.rate_limiter.clone();
         tokio_executor::spawn(async move {
-            let mut responses =
-                internal_receiver.filter_map(|e: Arc<Event<String>>| {
-                    futures_util::future::ready(match *e {
-                        Event::Ping(_) => Some(ClientMessage::<String>::Pong),
-                        Event::UserState(ref event) => {
-                            let badges = event.badges().unwrap();
-                            let is_mod = badges.into_iter().any(|badge| {
-                                ["moderator", "broadcaster", "vip"].contains(&badge.badge)
-                            });
-                            rate_limiter.update_mod_status(event.channel(), is_mod);
-                            None
-                        }
-                        _ => None,
-                    })
-                });
+            let mut responses = internal_receiver.filter_map(|e: Arc<Event<String>>| {
+                futures_util::future::ready(match *e {
+                    Event::Ping(_) => Some(ClientMessage::<String>::Pong),
+                    Event::UserState(ref event) => {
+                        let badges = event.badges().unwrap();
+                        let is_mod = badges.into_iter().any(|badge| {
+                            ["moderator", "broadcaster", "vip"].contains(&badge.badge)
+                        });
+                        rate_limiter.update_mod_status(event.channel(), is_mod);
+                        None
+                    }
+                    _ => None,
+                })
+            });
 
             internal_sender.send_all(&mut responses).await.unwrap();
         });
@@ -161,12 +151,17 @@ impl TwitchClient {
         sender
             .send(ClientMessage::<String>::CapRequest(capabilities))
             .await?;
-        sender.send_all(&mut ClientMessage::login(self.username.clone(), self.token.clone())).await?;
+        sender
+            .send_all(&mut ClientMessage::login(
+                self.username.clone(),
+                self.token.clone(),
+            ))
+            .await?;
 
         Ok(TwitchChatConnection {
             receiver: message_receiver,
             error_receiver,
-            sender: sender.clone()
+            sender: sender.clone(),
         })
     }
 
@@ -183,11 +178,8 @@ type ChatReceiver = BusSubscriber<
     mpsc::Receiver<Arc<Event<String>>>,
 >;
 
-type ErrorReceiver = BusSubscriber<
-    Arc<Error>,
-    mpsc::Sender<Arc<Error>>,
-    mpsc::Receiver<Arc<Error>>,
->;
+type ErrorReceiver =
+    BusSubscriber<Arc<Error>, mpsc::Sender<Arc<Error>>, mpsc::Receiver<Arc<Error>>>;
 
 type ChatSender = TwitchChatSender<mpsc::Sender<ClientMessage<String>>>;
 

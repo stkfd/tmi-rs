@@ -17,8 +17,6 @@
 //! use tmi_rs::event::{ChannelMessageEventData, Event};
 //! use tmi_rs::rate_limits::RateLimiterConfig;
 //!
-//! /// To run this example, the TWITCH_CHANNEL, TWITCH_USERNAME and TWITCH_AUTH environment variables
-//! /// need to be set.
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn Error>> {
 //!     env_logger::init();
@@ -36,32 +34,29 @@
 //!     sender.send(ClientMessage::join(channel.clone())).await?;
 //!
 //!     // process messages and do stuff with the data
-//!     let mut process_messages = receiver.filter_map(
-//!         |event| {
-//!             info!("{:?}", &event);
-//!             ready(match &*event {
-//!                 Event::PrivMsg(event_data) if event_data.message().starts_with("!hello") => {
-//!                     // return response message to the stream
-//!                     Some(ClientMessage::message(event_data.channel().to_owned(), "Hello World!"))
-//!                 }
-//!                 _ => None
+//!     let process_messages = async {
+//!         let send_result = receiver.filter_map(
+//!             |event| {
+//!                 info!("{:?}", &event);
+//!                 ready(match &*event {
+//!                     Event::PrivMsg(event_data) if event_data.message().starts_with("!hello") => {
+//!                         // return response message to the stream
+//!                         Some(ClientMessage::message(event_data.channel().to_owned(), "Hello World!"))
+//!                     }
+//!                     _ => None
+//!                 })
 //!             })
-//!         });
+//!             .map(Ok)
+//!             .forward(&mut sender).await;
 //!
-//!     // send responses from above
-//!     let send_responses = async {
-//!         let result = sender.send_all(&mut process_messages).await;
-//!         if let Err(e) = result {
-//!             // log errors from sending the messages
-//!             error!("{}", e);
-//!         }
+//!         if let Err(e) = send_result { error!("{}", e); }
 //!     };
 //!
 //!     // log any connection errors
 //!     let process_errors = error_receiver.for_each(async move |error| {
 //!         error!("Connection error: {}", error);
 //!     });
-//!     join(send_responses, process_errors).await;
+//!     join(process_messages, process_errors).await;
 //!     Ok(())
 //! }
 //! ```
