@@ -17,48 +17,60 @@ missing, including:
 ### Example usage
 
 ```rust
-#![feature(async_closure)]
 #[macro_use]
 extern crate log;
 
 use std::env;
 use std::error::Error;
-use tmi_rs::{TwitchClientBuilder, TwitchClient, futures_util::StreamExt};
-use tmi_rs::event::{Event, ChannelMessageEventData};
+
+use futures::future::{join, ready};
+use futures_util::SinkExt;
+
+use tmi_rs::{futures_util::stream::StreamExt, TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
+use tmi_rs::client_messages::ClientMessage;
+use tmi_rs::event::{ChannelMessageEventData, Event};
+use tmi_rs::rate_limits::RateLimiterConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     let channel = env::var("TWITCH_CHANNEL")?;
-    let client: TwitchClient = TwitchClientBuilder::default()
+    let client: TwitchClient = TwitchClientConfigBuilder::default()
         .username(env::var("TWITCH_USERNAME")?)
         .token(env::var("TWITCH_AUTH")?)
-        .cap_membership(true)
-        .build()?;
-    let (mut sender, mut receiver) = client.connect().await?;
+        .rate_limiter(RateLimiterConfig::default())
+        .build()?
+        .into();
 
-    sender.join(channel.clone()).await?;
+    let TwitchChatConnection { mut sender, receiver, error_receiver } = client.connect().await?;
 
-    while let Some(event) = receiver.next().await {
-        match &*event {
-            Ok(event) => {
-                match event {
-                    Event::PrivMsg(event_data) => {
-                        if event_data.message().starts_with("!hello") {
-                            sender.message(event_data.channel().to_owned(), "Hello World!").await?;
-                        }
+    // join a channel
+    sender.send(ClientMessage::join(channel.clone())).await?;
+
+    // process messages and do stuff with the data
+    let process_messages = async {
+        let send_result = receiver.filter_map(
+            |event| {
+                info!("{:?}", &event);
+                ready(match &*event {
+                    Event::PrivMsg(event_data) if event_data.message().starts_with("!hello") => {
+                        // return response message to the stream
+                        Some(ClientMessage::message(event_data.channel().to_owned(), "Hello World!"))
                     }
-                    _ => {
-                        info!("Event received: {:?}", event)
-                    }
-                }
-            }
-            Err(e) => error!("Connection error: {}", e)
-        }
-    }
-    receiver.for_each(async move |event| {
-        info!("{:?}", event);
-    }).await;
+                    _ => None
+                })
+            })
+            .map(Ok)
+            .forward(&mut sender).await;
+
+        if let Err(e) = send_result { error!("{}", e); }
+    };
+
+    // log any connection errors
+    let process_errors = error_receiver.for_each(async move |error| {
+        error!("Connection error: {}", error);
+    });
+    join(process_messages, process_errors).await;
     Ok(())
 }
 ```
