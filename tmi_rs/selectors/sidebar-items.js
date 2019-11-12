@@ -1,1 +1,1 @@
-initSidebarItems({});
+initSidebarItems({"fn":[["capability",""],["clear_chat",""],["clear_msg",""],["connect_message",""],["end_of_names",""],["host",""],["join",""],["mode",""],["names",""],["notice",""],["part",""],["priv_msg",""],["reconnect",""],["room_state",""],["user_notice",""],["user_state",""],["whisper",""]],"struct":[["SelectorResult","Contains a PRIVMSG event"]]});

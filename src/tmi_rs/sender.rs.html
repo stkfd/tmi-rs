@@ -60,14 +60,12 @@
 <span id="60">60</span>
 <span id="61">61</span>
 <span id="62">62</span>
-<span id="63">63</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Message/command sender helpers</span>
 
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">pin</span>::<span class="ident">Pin</span>;
 
-<span class="kw">use</span> <span class="ident">futures_core</span>::<span class="ident">task</span>::<span class="ident">Context</span>;
-<span class="kw">use</span> <span class="ident">futures_core</span>::<span class="ident">Poll</span>;
+<span class="kw">use</span> <span class="ident">futures_core</span>::<span class="ident">task</span>::{<span class="ident">Context</span>, <span class="ident">Poll</span>};
 <span class="kw">use</span> <span class="ident">futures_sink</span>::<span class="ident">Sink</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">client_messages</span>::<span class="ident">ClientMessage</span>;

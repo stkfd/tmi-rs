@@ -107,19 +107,11 @@
 <span id="107">107</span>
 <span id="108">108</span>
 <span id="109">109</span>
-<span id="110">110</span>
-<span id="111">111</span>
-<span id="112">112</span>
-<span id="113">113</span>
-<span id="114">114</span>
-<span id="115">115</span>
-<span id="116">116</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! A WebSocket based, asynchronous Twitch chat client.</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! # Example</span>
 <span class="doccomment">//! ```no_run</span>
-<span class="doccomment">//! #![feature(async_closure)]</span>
 <span class="doccomment">//! #[macro_use]</span>
 <span class="doccomment">//! extern crate log;</span>
 <span class="doccomment">//!</span>
@@ -134,8 +126,6 @@
 <span class="doccomment">//! use tmi_rs::event::{ChannelMessageEventData, Event};</span>
 <span class="doccomment">//! use tmi_rs::rate_limits::RateLimiterConfig;</span>
 <span class="doccomment">//!</span>
-<span class="doccomment">//! /// To run this example, the TWITCH_CHANNEL, TWITCH_USERNAME and TWITCH_AUTH environment variables</span>
-<span class="doccomment">//! /// need to be set.</span>
 <span class="doccomment">//! #[tokio::main]</span>
 <span class="doccomment">//! async fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {</span>
 <span class="doccomment">//!     env_logger::init();</span>
@@ -153,37 +143,33 @@
 <span class="doccomment">//!     sender.send(ClientMessage::join(channel.clone())).await?;</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//!     // process messages and do stuff with the data</span>
-<span class="doccomment">//!     let mut process_messages = receiver.filter_map(</span>
-<span class="doccomment">//!         |event| {</span>
-<span class="doccomment">//!             info!(&quot;{:?}&quot;, &amp;event);</span>
-<span class="doccomment">//!             ready(match &amp;*event {</span>
-<span class="doccomment">//!                 Event::PrivMsg(event_data) if event_data.message().starts_with(&quot;!hello&quot;) =&gt; {</span>
-<span class="doccomment">//!                     // return response message to the stream</span>
-<span class="doccomment">//!                     Some(ClientMessage::message(event_data.channel().to_owned(), &quot;Hello World!&quot;))</span>
-<span class="doccomment">//!                 }</span>
-<span class="doccomment">//!                 _ =&gt; None</span>
+<span class="doccomment">//!     let process_messages = async {</span>
+<span class="doccomment">//!         let send_result = receiver.filter_map(</span>
+<span class="doccomment">//!             |event| {</span>
+<span class="doccomment">//!                 info!(&quot;{:?}&quot;, &amp;event);</span>
+<span class="doccomment">//!                 ready(match &amp;*event {</span>
+<span class="doccomment">//!                     Event::PrivMsg(event_data) if event_data.message().starts_with(&quot;!hello&quot;) =&gt; {</span>
+<span class="doccomment">//!                         // return response message to the stream</span>
+<span class="doccomment">//!                         Some(ClientMessage::message(event_data.channel().to_owned(), &quot;Hello World!&quot;))</span>
+<span class="doccomment">//!                     }</span>
+<span class="doccomment">//!                     _ =&gt; None</span>
+<span class="doccomment">//!                 })</span>
 <span class="doccomment">//!             })</span>
-<span class="doccomment">//!         });</span>
+<span class="doccomment">//!             .map(Ok)</span>
+<span class="doccomment">//!             .forward(&amp;mut sender).await;</span>
 <span class="doccomment">//!</span>
-<span class="doccomment">//!     // send responses from above</span>
-<span class="doccomment">//!     let send_responses = async {</span>
-<span class="doccomment">//!         let result = sender.send_all(&amp;mut process_messages).await;</span>
-<span class="doccomment">//!         if let Err(e) = result {</span>
-<span class="doccomment">//!             // log errors from sending the messages</span>
-<span class="doccomment">//!             error!(&quot;{}&quot;, e);</span>
-<span class="doccomment">//!         }</span>
+<span class="doccomment">//!         if let Err(e) = send_result { error!(&quot;{}&quot;, e); }</span>
 <span class="doccomment">//!     };</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//!     // log any connection errors</span>
 <span class="doccomment">//!     let process_errors = error_receiver.for_each(async move |error| {</span>
 <span class="doccomment">//!         error!(&quot;Connection error: {}&quot;, error);</span>
 <span class="doccomment">//!     });</span>
-<span class="doccomment">//!     join(send_responses, process_errors).await;</span>
+<span class="doccomment">//!     join(process_messages, process_errors).await;</span>
 <span class="doccomment">//!     Ok(())</span>
 <span class="doccomment">//! }</span>
 <span class="doccomment">//! ```</span>
 
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">async_closure</span>)]</span>
 <span class="attribute">#![<span class="ident">deny</span>(
     <span class="ident">unused_must_use</span>,
     <span class="ident">unused_mut</span>,
