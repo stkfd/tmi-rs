@@ -2,7 +2,6 @@
 //!
 //! # Example
 //! ```no_run
-//! #![feature(async_closure)]
 //! #[macro_use]
 //! extern crate log;
 //!
@@ -61,7 +60,6 @@
 //! }
 //! ```
 
-#![feature(async_closure)]
 #![deny(
     unused_must_use,
     unused_mut,
