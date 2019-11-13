@@ -16,7 +16,6 @@ pub enum EventHandlerResult {
 /// # Examples
 ///
 /// ```rust
-/// #![feature(async_closure)]
 /// use tmi_rs::dispatch::*;
 /// use tmi_rs::event::Event;
 ///
