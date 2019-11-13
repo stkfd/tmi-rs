@@ -32,7 +32,9 @@ where
     St: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Map").field("stream", &self.stream).finish()
+        f.debug_struct("TwitchChatStream")
+            .field("stream", &self.stream)
+            .finish()
     }
 }
 

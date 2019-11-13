@@ -310,33 +310,68 @@ impl RateLimiter {
         }
     }
 
+    /// Check whether the rate limiting buckets need an update to reflect the given mod status.
+    /// This check only needs a read lock from the RwLock, so it is always done before acquiring
+    /// the (exclusive) write lock needed to actually update the limits.
+    fn limit_update_required(&self, channel: &str, is_mod: bool) -> bool {
+        let limits_map = self.limits_map.read();
+        let limits = limits_map.get(channel).unwrap().read();
+        let non_privileged_bucket = limits
+            .limit_buckets
+            .iter()
+            .enumerate()
+            .find_map(|(idx, b)| if *b == "privmsg" { Some(idx) } else { None });
+        match non_privileged_bucket {
+            Some(_) if is_mod => return true,
+            None if !is_mod => return true,
+            _ => {}
+        };
+        match limits.slow_mode {
+            SlowModeLimit::Channel(_) | SlowModeLimit::Global if is_mod => return true,
+            SlowModeLimit::Unlimited if !is_mod => return true,
+            _ => {}
+        };
+        false
+    }
+
     /// Update the rate limiting buckets if necessary, when the user gains or loses mod status in
     /// a channel
     pub fn update_mod_status(&self, channel: &str, is_mod: bool) {
         self.init_channel(channel);
+        if !self.limit_update_required(channel, is_mod) {
+            return;
+        }
+        if is_mod {
+            info!("Applying moderator rate limits in channel {}.", channel);
+        } else {
+            info!("Applying non-moderator rate limits in channel {}.", channel);
+        }
 
         let limits_map = self.limits_map.read();
-        let limits = limits_map.get(channel).unwrap();
+        let mut limits = limits_map.get(channel).unwrap().write();
         let non_privileged_bucket = limits
-            .read()
             .limit_buckets
             .iter()
             .enumerate()
             .find_map(|(idx, b)| if *b == "privmsg" { Some(idx) } else { None });
         match non_privileged_bucket {
             Some(non_privileged_bucket) if is_mod => {
-                info!("Applying moderator rate limits in channel {}.", channel);
-                limits
-                    .write()
-                    .limit_buckets
-                    .swap_remove(non_privileged_bucket);
+                limits.limit_buckets.swap_remove(non_privileged_bucket);
             }
             None if !is_mod => {
-                info!("Applying non-moderator rate limits in channel {}.", channel);
-                limits.write().limit_buckets.push("privmsg");
+                limits.limit_buckets.push("privmsg");
             }
             _ => {}
-        }
+        };
+        match limits.slow_mode {
+            SlowModeLimit::Channel(_) | SlowModeLimit::Global if is_mod => {
+                limits.slow_mode = SlowModeLimit::Unlimited;
+            }
+            SlowModeLimit::Unlimited if !is_mod => {
+                limits.slow_mode = SlowModeLimit::Global;
+            }
+            _ => {}
+        };
     }
 
     fn init_channel(&self, channel: &str) {
@@ -391,6 +426,9 @@ impl ChannelLimits {
     }
 
     fn poll_slow_mode(&self, cx: &mut Context<'_>) -> Poll<()> {
+        if self.slow_mode == SlowModeLimit::Unlimited {
+            return Poll::Ready(());
+        }
         if self.slow_mode_delay.read().is_some() {
             if let Some(delay) = self.slow_mode_delay.write().as_mut() {
                 match delay.poll_unpin(cx) {
@@ -413,7 +451,7 @@ impl ChannelLimits {
 }
 
 /// Slow mode configuration for a channel
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SlowModeLimit {
     /// limit to an amount of seconds per message
     Channel(usize),
@@ -571,8 +609,8 @@ mod test {
             tokio_test::clock::mock(|handle| {
                 let rate_limiter = Arc::new(RateLimiterConfig::default().into());
                 let a = Limitable(Some("a".to_string()));
-                let mut stream =
-                    iter(vec![a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
+                let mut stream = iter(vec![a.clone(), a.clone(), a.clone(), a.clone()])
+                    .rate_limited(10, &rate_limiter);
                 rate_limiter.set_slow_mode("a", SlowModeLimit::Channel(10));
                 assert_ready!(stream.poll_next_unpin(cx));
                 assert_pending!(stream.poll_next_unpin(cx));
@@ -580,6 +618,9 @@ mod test {
                 handle.advance(Duration::from_millis(1100));
                 rate_limiter.set_slow_mode("a", SlowModeLimit::Channel(5));
 
+                assert_ready_eq!(stream.poll_next_unpin(cx), Some(a.clone()));
+
+                rate_limiter.set_slow_mode("a", SlowModeLimit::Unlimited);
                 assert_ready_eq!(stream.poll_next_unpin(cx), Some(a));
             });
         });
