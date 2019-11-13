@@ -299,6 +299,12 @@ pub trait UserNoticeTags<T: StringRef>: MessageTags<T> {
 
 /// Tags specific to ROOMSTATE events
 pub trait RoomStateTags<T: StringRef>: MessageTags<T> {
+    /// `room-id` tag
+    #[inline]
+    fn room_id(&self) -> Result<&T, Error> {
+        self.required_tag("room-id")
+    }
+
     /// `emote-only` tag. Set when emote only mode is active.
     #[inline]
     fn emote_only(&self) -> bool {
