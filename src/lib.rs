@@ -89,6 +89,7 @@ pub use futures_sink;
 pub use futures_util;
 
 pub use client::*;
+use client_messages::*;
 pub use errors::*;
 pub use sender::*;
 
