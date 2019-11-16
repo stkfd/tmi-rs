@@ -170,16 +170,16 @@ impl TwitchClient {
     }
 }
 
-type ChatReceiver = BusSubscriber<
+pub type ChatReceiver = BusSubscriber<
     Arc<Event<String>>,
     mpsc::Sender<Arc<Event<String>>>,
     mpsc::Receiver<Arc<Event<String>>>,
 >;
 
-type ErrorReceiver =
+pub type ErrorReceiver =
     BusSubscriber<Arc<Error>, mpsc::Sender<Arc<Error>>, mpsc::Receiver<Arc<Error>>>;
 
-type ChatSender = TwitchChatSender<mpsc::Sender<ClientMessage<String>>>;
+pub type ChatSender = TwitchChatSender<mpsc::Sender<ClientMessage<String>>>;
 
 /// Contains the Streams and Sinks associated with an underlying websocket connection. They
 /// can be cloned freely to be shared across different tasks and threads.
