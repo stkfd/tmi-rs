@@ -135,7 +135,11 @@ impl TwitchClient {
                 })
             });
 
-            responses.map(Ok).forward(&mut internal_sender).await.unwrap();
+            responses
+                .map(Ok)
+                .forward(&mut internal_sender)
+                .await
+                .unwrap();
         });
 
         let mut capabilities = Vec::with_capacity(3);
@@ -151,10 +155,9 @@ impl TwitchClient {
         sender
             .send(ClientMessage::<String>::CapRequest(capabilities))
             .await?;
-        sender.send_all(&mut ClientMessage::login(
-            self.username.clone(),
-            self.token.clone(),
-        ).map(Ok)).await?;
+        sender
+            .send_all(&mut ClientMessage::login(self.username.clone(), self.token.clone()).map(Ok))
+            .await?;
 
         Ok(TwitchChatConnection {
             receiver: message_receiver,
@@ -170,15 +173,18 @@ impl TwitchClient {
     }
 }
 
+/// Receiver channel for all chat events
 pub type ChatReceiver = BusSubscriber<
     Arc<Event<String>>,
     mpsc::Sender<Arc<Event<String>>>,
     mpsc::Receiver<Arc<Event<String>>>,
 >;
 
+/// Receiver channel for connection and parsing errors
 pub type ErrorReceiver =
     BusSubscriber<Arc<Error>, mpsc::Sender<Arc<Error>>, mpsc::Receiver<Arc<Error>>>;
 
+/// Sender to push messages to Twitch chat
 pub type ChatSender = TwitchChatSender<mpsc::Sender<ClientMessage<String>>>;
 
 /// Contains the Streams and Sinks associated with an underlying websocket connection. They

@@ -54,21 +54,21 @@ use crate::{Error, StringRef};
 /// Access methods for individual IRC tags by their string tag keys
 pub trait MessageTags<T> {
     /// Get the map of all IRCv3 tags.
-    fn tags(&self) -> &Option<FnvHashMap<T, T>>;
+    fn tags(&self) -> &Option<FnvHashMap<T, String>>;
 
     /// Get a tag value from the message by its key. `None` for tags that are not present
     /// as well as tags that are set but empty.
-    fn tag<Q: Borrow<str>>(&self, key: Q) -> Option<&T>;
+    fn tag<Q: Borrow<str>>(&self, key: Q) -> Option<&str>;
 
     /// Gets a tag value, returns an Error if the value is not set or empty. Intended for use in
     /// cases where the tag should always be available.
-    fn required_tag<Q: Borrow<str>>(&self, key: Q) -> Result<&T, Error>;
+    fn required_tag<Q: Borrow<str>>(&self, key: Q) -> Result<&str, Error>;
 }
 
 /// Tags specific to CLEARCHAT events
 pub trait ClearChatTags<T>: MessageTags<T> {
     /// `ban-duration` tag. Duration of the timeout, in seconds. If omitted, the ban is permanent.
-    fn ban_duration(&self) -> Option<&T> {
+    fn ban_duration(&self) -> Option<&str> {
         self.tag("ban-duration")
     }
 }
@@ -78,13 +78,13 @@ impl<T: StringRef> ClearChatTags<T> for EventData<T, ClearChatEvent<T>> {}
 pub trait ClearMsgTags<T>: MessageTags<T> {
     /// `target-msg-id` tag. UUID of the message to be deleted.
     #[inline]
-    fn target_msg_id(&self) -> Result<&T, Error> {
+    fn target_msg_id(&self) -> Result<&str, Error> {
         self.required_tag("target-msg-id")
     }
 
     ///	`login` tag. Name of the user who sent the message
     #[inline]
-    fn login(&self) -> Result<&T, Error> {
+    fn login(&self) -> Result<&str, Error> {
         self.required_tag("login")
     }
 }
@@ -126,13 +126,13 @@ impl<T: StringRef> BadgeTags<T> for EventData<T, WhisperEvent<T>> {}
 pub trait UserDisplayTags<T: StringRef>: MessageTags<T> {
     /// `color` tag
     #[inline]
-    fn color(&self) -> Option<&T> {
+    fn color(&self) -> Option<&str> {
         self.tag("color")
     }
 
     /// `display-name` tag
     #[inline]
-    fn display_name(&self) -> Option<&T> {
+    fn display_name(&self) -> Option<&str> {
         self.tag("display-name")
     }
 }
@@ -168,7 +168,7 @@ impl<T: StringRef> EmoteSetsTag<T> for EventData<T, UserStateEvent<T>> {}
 pub trait UserIdTag<T: StringRef>: MessageTags<T> {
     /// `user-id` tag
     #[inline]
-    fn user_id(&self) -> Result<&T, Error> {
+    fn user_id(&self) -> Result<&str, Error> {
         self.required_tag("user-id")
     }
 }
@@ -196,7 +196,7 @@ impl<T: StringRef> ModTag<T> for EventData<T, UserNoticeEvent<T>> {}
 pub trait BitsTag<T: StringRef>: MessageTags<T> {
     /// `bits` tag
     #[inline]
-    fn bits(&self) -> Option<&T> {
+    fn bits(&self) -> Option<&str> {
         self.tag("bits")
     }
 }
@@ -241,13 +241,13 @@ impl<T: StringRef> EmotesTag<T> for EventData<T, WhisperEvent<T>> {}
 pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
     /// `id` tag
     #[inline]
-    fn id(&self) -> Result<&T, Error> {
+    fn id(&self) -> Result<&str, Error> {
         self.required_tag("id")
     }
 
     /// `room-id` tag
     #[inline]
-    fn room_id(&self) -> Result<&T, Error> {
+    fn room_id(&self) -> Result<&str, Error> {
         self.required_tag("room-id")
     }
 
@@ -274,7 +274,7 @@ pub struct EmoteReplacement {
 pub trait UserNoticeTags<T: StringRef>: MessageTags<T> {
     /// `login` tag. Name of the user who sent the notice.
     #[inline]
-    fn login(&self) -> Result<&T, Error> {
+    fn login(&self) -> Result<&str, Error> {
         self.required_tag("login")
     }
 
@@ -284,7 +284,7 @@ pub trait UserNoticeTags<T: StringRef>: MessageTags<T> {
     /// submysterygift, giftpaidupgrade, rewardgift, anongiftpaidupgrade, raid, unraid,
     /// ritual, bitsbadgetier.
     #[inline]
-    fn msg_id(&self) -> Result<&T, Error> {
+    fn msg_id(&self) -> Result<&str, Error> {
         self.required_tag("msg-id")
     }
 
@@ -292,7 +292,7 @@ pub trait UserNoticeTags<T: StringRef>: MessageTags<T> {
     ///
     /// The message printed in chat along with this notice.
     #[inline]
-    fn system_msg(&self) -> Result<&T, Error> {
+    fn system_msg(&self) -> Result<&str, Error> {
         self.required_tag("system-msg")
     }
 }
@@ -301,7 +301,7 @@ pub trait UserNoticeTags<T: StringRef>: MessageTags<T> {
 pub trait RoomStateTags<T: StringRef>: MessageTags<T> {
     /// `room-id` tag
     #[inline]
-    fn room_id(&self) -> Result<&T, Error> {
+    fn room_id(&self) -> Result<&str, Error> {
         self.required_tag("room-id")
     }
 
@@ -368,7 +368,7 @@ pub trait WhisperTags<T: StringRef>: MessageTags<T> {
     }
 
     /// `thread-id` tag for whispers, to identify conversations.
-    fn thread_id(&self) -> Result<&T, Error> {
+    fn thread_id(&self) -> Result<&str, Error> {
         self.required_tag("thread-id")
     }
 }

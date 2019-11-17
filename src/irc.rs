@@ -19,7 +19,7 @@ use crate::{Error, StringRef};
 #[derive(Debug, Eq, PartialEq)]
 pub struct IrcMessage<T: StringRef> {
     /// IRCv3 tags
-    pub tags: Option<FnvHashMap<T, T>>,
+    pub tags: Option<FnvHashMap<T, String>>,
     /// IRC prefix
     pub prefix: Option<IrcPrefix<T>>,
     /// IRC Command name
@@ -217,7 +217,7 @@ fn irc_prefix(input: &str) -> IResult<&str, IrcPrefix<&str>> {
 }
 
 /// Parse IRCv3 tags into a HashMap
-fn irc_tags(input: &str) -> IResult<&str, Option<FnvHashMap<&str, &str>>> {
+fn irc_tags(input: &str) -> IResult<&str, Option<FnvHashMap<&str, String>>> {
     let (remaining, list_opt) = opt(delimited(
         char('@'),
         separated_list(char(';'), irc_tag),
@@ -238,15 +238,20 @@ fn irc_tags(input: &str) -> IResult<&str, Option<FnvHashMap<&str, &str>>> {
 }
 
 /// Parse a single IRCv3 tag
-fn irc_tag(input: &str) -> IResult<&str, (&str, Option<&str>)> {
-    let (remaining, (key, val)) = tuple((
+fn irc_tag(input: &str) -> IResult<&str, (&str, Option<String>)> {
+    let (remaining, (key, val_opt)) = tuple((
         irc_tag_key_str,
         opt(preceded(
             char('='),
             opt(take_while1(|c: char| !" ;".contains(c))),
         )),
     ))(input)?;
-    Ok((remaining, (key, val.and_then(identity))))
+    let unesc_val = if let Some(Some(val)) = val_opt {
+        Some(unescape_tag_value(val))
+    } else {
+        None
+    };
+    Ok((remaining, (key, unesc_val)))
 }
 
 fn irc_tag_key_str(input: &str) -> IResult<&str, &str> {
@@ -272,6 +277,27 @@ fn spaces0(input: &str) -> IResult<&str, &str> {
     take_while(|c| c == ' ')(input)
 }
 
+/// Unescape tag values according to irc spec
+pub fn unescape_tag_value(value: &str) -> String {
+    let mut unescaped = String::with_capacity(value.len());
+    let mut iter = value.chars();
+    while let Some(chr) = iter.next() {
+        match chr {
+            '\\' => match iter.next() {
+                Some(':') => unescaped.push(';'),
+                Some('s') => unescaped.push(' '),
+                Some('\\') => unescaped.push('\\'),
+                Some('r') => unescaped.push('\r'),
+                Some('n') => unescaped.push('\n'),
+                Some(other) => unescaped.push(other),
+                None => {}
+            },
+            other => unescaped.push(other),
+        }
+    }
+    unescaped
+}
+
 // ------------------------------ TESTS ------------------------------
 
 #[test]
@@ -283,6 +309,15 @@ fn test_irc_tags() {
     assert_eq!(map["tag-name-1"], "<tag-value-1>");
     assert_eq!(map["tag-name-2"], "<tag-value-2>");
     assert_eq!(map.contains_key("empty-tag"), false);
+}
+
+#[test]
+fn test_irc_tags_escaped() {
+    let tag_str = "@tag-name=escape\\stest\\r\\n\\:\\s\\\\";
+    let (remaining, map) = irc_tags(tag_str).unwrap();
+    let map = map.unwrap();
+    assert_eq!(remaining.len(), 0);
+    assert_eq!(map["tag-name"], "escape test\r\n; \\");
 }
 
 #[test]

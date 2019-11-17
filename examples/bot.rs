@@ -63,8 +63,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     // log any connection errors
-    let process_errors = error_receiver.for_each(|error| async move {
-        error!("Connection error: {}", error);
+    let process_errors = error_receiver.for_each(|error| {
+        async move {
+            error!("Connection error: {}", error);
+        }
     });
     join(process_messages, process_errors).await;
     Ok(())

@@ -296,7 +296,7 @@ where
     /// Inner type specific event data
     pub(crate) event: Inner,
     /// Map of IRCv3 tags
-    pub(crate) tags: Option<FnvHashMap<T, T>>,
+    pub(crate) tags: Option<FnvHashMap<T, String>>,
 }
 
 /// Methods common to all EventContent variants
@@ -324,18 +324,20 @@ where
     Event<T>: From<EventData<T, Inner>>,
 {
     /// Get the map of all IRCv3 tags
-    fn tags(&self) -> &Option<FnvHashMap<T, T>> {
+    fn tags(&self) -> &Option<FnvHashMap<T, String>> {
         &self.tags
     }
 
     /// Get a tag value from the message by its key
-    fn tag<Q: Borrow<str>>(&self, key: Q) -> Option<&T> {
-        self.tags.as_ref().and_then(|tags| tags.get(key.borrow()))
+    fn tag<Q: Borrow<str>>(&self, key: Q) -> Option<&str> {
+        self.tags
+            .as_ref()
+            .and_then(|tags| tags.get(key.borrow()).map(|s| s.as_str()))
     }
 
     /// Gets a tag value, returns an Error if the value is not set. Intended for use in
     /// internal tag accessor functions where the tag should always be available
-    fn required_tag<Q: Borrow<str>>(&self, key: Q) -> Result<&T, Error> {
+    fn required_tag<Q: Borrow<str>>(&self, key: Q) -> Result<&str, Error> {
         self.tag(key.borrow()).ok_or_else(|| Error::MissingTag {
             tag: key.borrow().to_string().into(),
             event: (&Event::<T>::from(self.clone())).into(),

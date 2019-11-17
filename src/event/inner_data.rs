@@ -716,7 +716,11 @@ mod test {
                 sender: None,
                 event: ChannelMessageEvent::new("#dallas", "HeyGuys").into(),
                 tags: Some(FnvHashMap::from_iter(
-                    vec![("login", "ronni"), ("target-msg-id", "abc-123-def")].into_iter()
+                    vec![
+                        ("login", "ronni".to_string()),
+                        ("target-msg-id", "abc-123-def".to_string())
+                    ]
+                    .into_iter()
                 ))
             })
         )
@@ -776,7 +780,7 @@ mod test {
                 event: ChannelMessageEvent::new("#dallas", "This room is no longer in slow mode.")
                     .into(),
                 tags: Some(FnvHashMap::from_iter(
-                    vec![("msg-id", "slow_off")].into_iter()
+                    vec![("msg-id", "slow_off".to_string())].into_iter()
                 ))
             })
         )
@@ -798,11 +802,11 @@ mod test {
                 event: ChannelEvent::new("#dallas").into(),
                 tags: Some(FnvHashMap::from_iter(
                     vec![
-                        ("emote-only", "0"),
-                        ("followers-only", "0"),
-                        ("subs-only", "0"),
-                        ("slow", "0"),
-                        ("r9k", "0")
+                        ("emote-only", "0".to_string()),
+                        ("followers-only", "0".to_string()),
+                        ("subs-only", "0".to_string()),
+                        ("slow", "0".to_string()),
+                        ("r9k", "0".to_string())
                     ]
                     .into_iter()
                 ))
