@@ -247,8 +247,14 @@ pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
 
     /// `room-id` tag
     #[inline]
-    fn room_id(&self) -> Result<&str, Error> {
-        self.required_tag("room-id")
+    fn room_id(&self) -> Result<usize, Error> {
+        let id = self.required_tag("room-id")?;
+        usize::from_str(id).map_err(|err| {
+            Error::TagParseError(
+                "room-id".to_string(),
+                "Expected integer room id".to_string(),
+            )
+        })
     }
 
     /// `tmi-sent-ts` tag
@@ -301,8 +307,14 @@ pub trait UserNoticeTags<T: StringRef>: MessageTags<T> {
 pub trait RoomStateTags<T: StringRef>: MessageTags<T> {
     /// `room-id` tag
     #[inline]
-    fn room_id(&self) -> Result<&str, Error> {
-        self.required_tag("room-id")
+    fn room_id(&self) -> Result<usize, Error> {
+        let id = self.required_tag("room-id")?;
+        usize::from_str(id).map_err(|err| {
+            Error::TagParseError(
+                "room-id".to_string(),
+                "Expected integer room id".to_string(),
+            )
+        })
     }
 
     /// `emote-only` tag. Set when emote only mode is active.
