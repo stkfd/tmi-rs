@@ -81,14 +81,19 @@ pub trait ClearMsgTags<T>: MessageTags<T> {
     fn target_msg_id(&self) -> Result<&str, Error> {
         self.required_tag("target-msg-id")
     }
+}
+impl<T: StringRef> ClearMsgTags<T> for EventData<T, ClearMsgEvent<T>> {}
 
+/// Accessor for the `login` tag
+pub trait LoginTag<T: StringRef>: MessageTags<T> {
     ///	`login` tag. Name of the user who sent the message
     #[inline]
     fn login(&self) -> Result<&str, Error> {
         self.required_tag("login")
     }
 }
-impl<T: StringRef> ClearMsgTags<T> for EventData<T, ClearMsgEvent<T>> {}
+impl<T: StringRef> LoginTag<T> for EventData<T, ClearMsgEvent<T>> {}
+impl<T: StringRef> LoginTag<T> for EventData<T, UserNoticeEvent<T>> {}
 
 /// Access to `badges` and `badge-info` tags
 pub trait BadgeTags<T: StringRef>: MessageTags<T> {
@@ -245,18 +250,6 @@ pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
         self.required_tag("id")
     }
 
-    /// `room-id` tag
-    #[inline]
-    fn room_id(&self) -> Result<usize, Error> {
-        let id = self.required_tag("room-id")?;
-        usize::from_str(id).map_err(|err| {
-            Error::TagParseError(
-                "room-id".to_string(),
-                "Expected integer room id".to_string(),
-            )
-        })
-    }
-
     /// `tmi-sent-ts` tag
     fn sent_timestamp(&self) -> Result<usize, Error> {
         let tag = self.required_tag("tmi-sent-ts")?;
@@ -266,6 +259,24 @@ pub trait UserMessageTags<T: StringRef>: MessageTags<T> {
 }
 impl<T: StringRef> UserMessageTags<T> for EventData<T, PrivMsgEvent<T>> {}
 impl<T: StringRef> UserMessageTags<T> for EventData<T, UserNoticeEvent<T>> {}
+
+/// Accessor for the `room-id` tag
+pub trait RoomIdTag<T: StringRef>: MessageTags<T> {
+    /// `room-id` tag
+    #[inline]
+    fn room_id(&self) -> Result<usize, Error> {
+        let id = self.required_tag("room-id")?;
+        usize::from_str(id).map_err(|_| {
+            Error::TagParseError(
+                "room-id".to_string(),
+                "Expected integer room id".to_string(),
+            )
+        })
+    }
+}
+impl<T: StringRef> RoomIdTag<T> for EventData<T, PrivMsgEvent<T>> {}
+impl<T: StringRef> RoomIdTag<T> for EventData<T, UserNoticeEvent<T>> {}
+impl<T: StringRef> RoomIdTag<T> for EventData<T, RoomStateEvent<T>> {}
 
 /// Replacement instruction for an emote
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -278,12 +289,6 @@ pub struct EmoteReplacement {
 
 /// Tags specific to USERNOTICE messages
 pub trait UserNoticeTags<T: StringRef>: MessageTags<T> {
-    /// `login` tag. Name of the user who sent the notice.
-    #[inline]
-    fn login(&self) -> Result<&str, Error> {
-        self.required_tag("login")
-    }
-
     /// `msg-id` tag.
     ///
     /// The type of notice (not the ID). Valid values: sub, resub, subgift, anonsubgift,
@@ -302,21 +307,10 @@ pub trait UserNoticeTags<T: StringRef>: MessageTags<T> {
         self.required_tag("system-msg")
     }
 }
+impl<T: StringRef> UserNoticeTags<T> for EventData<T, UserNoticeEvent<T>> {}
 
 /// Tags specific to ROOMSTATE events
 pub trait RoomStateTags<T: StringRef>: MessageTags<T> {
-    /// `room-id` tag
-    #[inline]
-    fn room_id(&self) -> Result<usize, Error> {
-        let id = self.required_tag("room-id")?;
-        usize::from_str(id).map_err(|err| {
-            Error::TagParseError(
-                "room-id".to_string(),
-                "Expected integer room id".to_string(),
-            )
-        })
-    }
-
     /// `emote-only` tag. Set when emote only mode is active.
     #[inline]
     fn emote_only(&self) -> bool {
