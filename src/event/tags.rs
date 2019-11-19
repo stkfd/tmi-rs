@@ -173,8 +173,14 @@ impl<T: StringRef> EmoteSetsTag<T> for EventData<T, UserStateEvent<T>> {}
 pub trait UserIdTag<T: StringRef>: MessageTags<T> {
     /// `user-id` tag
     #[inline]
-    fn user_id(&self) -> Result<&str, Error> {
-        self.required_tag("user-id")
+    fn user_id(&self) -> Result<usize, Error> {
+        let id = self.required_tag("user-id")?;
+        usize::from_str(id).map_err(|_| {
+            Error::TagParseError(
+                "user-id".to_string(),
+                "Expected integer user id".to_string(),
+            )
+        })
     }
 }
 impl<T: StringRef> UserIdTag<T> for EventData<T, GlobalUserStateEvent> {}
