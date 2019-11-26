@@ -83,11 +83,6 @@ use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-pub use futures_channel;
-pub use futures_core;
-pub use futures_sink;
-pub use futures_util;
-
 pub use client::*;
 pub use client_messages::*;
 pub use errors::*;
