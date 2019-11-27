@@ -92,7 +92,7 @@ impl TwitchClient {
         let (client_sender, client_recv) = mpsc::channel::<ClientMessage<String>>(100);
         let mut sender = TwitchChatSender::new(client_sender);
 
-        tokio_executor::spawn(async {
+        tokio::spawn(async {
             let mut ws_recv = ws_recv;
             let mut message_bus = message_bus;
             let mut error_bus = error_bus;
@@ -108,7 +108,7 @@ impl TwitchClient {
         });
 
         let rate_limiter = self.rate_limiter.clone();
-        tokio_executor::spawn(async move {
+        tokio::spawn(async move {
             let messages = client_recv
                 .rate_limited(200, &rate_limiter)
                 .map(|msg| Message::from(msg.to_string()));
@@ -119,7 +119,7 @@ impl TwitchClient {
         let internal_receiver = message_receiver.try_clone().expect("Get internal receiver");
         let mut internal_sender = sender.clone();
         let rate_limiter = self.rate_limiter.clone();
-        tokio_executor::spawn(async move {
+        tokio::spawn(async move {
             let responses = internal_receiver.filter_map(|e: Arc<Event<String>>| {
                 futures_util::future::ready(match *e {
                     Event::Ping(_) => Some(ClientMessage::<String>::Pong),

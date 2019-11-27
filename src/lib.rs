@@ -9,9 +9,10 @@
 //! use std::error::Error;
 //!
 //! use futures::future::{join, ready};
-//! use futures_util::SinkExt;
+//! use futures::stream::StreamExt;
+//! use futures::sink::SinkExt;
 //!
-//! use tmi_rs::{futures_util::stream::StreamExt, TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
+//! use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
 //! use tmi_rs::client_messages::ClientMessage;
 //! use tmi_rs::event::{ChannelMessageEventData, Event};
 //! use tmi_rs::rate_limits::RateLimiterConfig;
