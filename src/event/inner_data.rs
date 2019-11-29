@@ -107,12 +107,27 @@ impl<T: StringRef> ChannelMessageEvent<T> {
     }
 }
 
+/// Event message access trait
+pub trait MessageEventData<T> {
+    /// Actual message
+    fn message(&self) -> &T;
+}
+
+impl<T, U> MessageEventData<T> for EventData<T, U>
+where
+    T: StringRef,
+    U: Debug + Clone + Eq + AsRef<ChannelMessageEvent<T>>,
+{
+    #[inline]
+    fn message(&self) -> &T {
+        &self.event.as_ref().message
+    }
+}
+
 /// Accessors for channel message event data
 pub trait ChannelMessageEventData<T> {
     /// Channel name for the message
     fn channel(&self) -> &T;
-    /// Actual message
-    fn message(&self) -> &T;
 }
 
 impl<T, U> ChannelMessageEventData<T> for EventData<T, U>
@@ -124,12 +139,6 @@ where
     #[inline]
     fn channel(&self) -> &T {
         &self.event.as_ref().channel
-    }
-
-    /// Get the message
-    #[inline]
-    fn message(&self) -> &T {
-        &self.event.as_ref().message
     }
 }
 
@@ -461,8 +470,6 @@ impl<T: StringRef> WhisperEvent<T> {
 pub trait WhisperEventData<T: StringRef> {
     /// Recipient of the whisper
     fn recipient(&self) -> &T;
-    /// The message
-    fn message(&self) -> &T;
 }
 
 impl<T: StringRef> WhisperEventData<T> for EventData<T, WhisperEvent<T>> {
@@ -470,6 +477,9 @@ impl<T: StringRef> WhisperEventData<T> for EventData<T, WhisperEvent<T>> {
     fn recipient(&self) -> &T {
         &self.event.recipient
     }
+}
+
+impl<T: StringRef> MessageEventData<T> for EventData<T, WhisperEvent<T>> {
     #[inline]
     fn message(&self) -> &T {
         &self.event.message

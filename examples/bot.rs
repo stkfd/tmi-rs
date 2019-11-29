@@ -9,7 +9,7 @@ use futures::sink::SinkExt;
 use futures::stream::StreamExt;
 
 use tmi_rs::client_messages::ClientMessage;
-use tmi_rs::event::ChannelMessageEventData;
+use tmi_rs::event::*;
 use tmi_rs::rate_limits::RateLimiterConfig;
 use tmi_rs::selectors::priv_msg;
 use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};

@@ -80,6 +80,20 @@ where
     }
 }
 
+impl<T: StringRef> Event<T> {
+    /// Get the message body of the event if applicable to this event type
+    pub fn message(&self) -> Option<&T> {
+        match self {
+            Event::PrivMsg(data) => Some(data.message()),
+            Event::ClearMsg(data) => Some(data.message()),
+            Event::Notice(data) => Some(data.message()),
+            Event::UserNotice(data) => Some(data.message()),
+            Event::Whisper(data) => Some(data.message()),
+            _ => None,
+        }
+    }
+}
+
 #[inline]
 fn check_parameter_count<T: StringRef>(count: usize, msg: &IrcMessage<T>) -> Result<(), Error> {
     if msg.params().len() != count {

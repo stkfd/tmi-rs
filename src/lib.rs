@@ -14,7 +14,7 @@
 //!
 //! use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
 //! use tmi_rs::client_messages::ClientMessage;
-//! use tmi_rs::event::{ChannelMessageEventData, Event};
+//! use tmi_rs::event::*;
 //! use tmi_rs::rate_limits::RateLimiterConfig;
 //!
 //! #[tokio::main]
