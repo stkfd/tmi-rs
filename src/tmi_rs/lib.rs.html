@@ -104,9 +104,6 @@
 <span id="104">104</span>
 <span id="105">105</span>
 <span id="106">106</span>
-<span id="107">107</span>
-<span id="108">108</span>
-<span id="109">109</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! A WebSocket based, asynchronous Twitch chat client.</span>
 <span class="doccomment">//!</span>
@@ -119,11 +116,12 @@
 <span class="doccomment">//! use std::error::Error;</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! use futures::future::{join, ready};</span>
-<span class="doccomment">//! use futures_util::SinkExt;</span>
+<span class="doccomment">//! use futures::stream::StreamExt;</span>
+<span class="doccomment">//! use futures::sink::SinkExt;</span>
 <span class="doccomment">//!</span>
-<span class="doccomment">//! use tmi_rs::{futures_util::stream::StreamExt, TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};</span>
+<span class="doccomment">//! use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};</span>
 <span class="doccomment">//! use tmi_rs::client_messages::ClientMessage;</span>
-<span class="doccomment">//! use tmi_rs::event::{ChannelMessageEventData, Event};</span>
+<span class="doccomment">//! use tmi_rs::event::*;</span>
 <span class="doccomment">//! use tmi_rs::rate_limits::RateLimiterConfig;</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! #[tokio::main]</span>
@@ -162,7 +160,7 @@
 <span class="doccomment">//!     };</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//!     // log any connection errors</span>
-<span class="doccomment">//!     let process_errors = error_receiver.for_each(async move |error| {</span>
+<span class="doccomment">//!     let process_errors = error_receiver.for_each(|error| async move {</span>
 <span class="doccomment">//!         error!(&quot;Connection error: {}&quot;, error);</span>
 <span class="doccomment">//!     });</span>
 <span class="doccomment">//!     join(process_messages, process_errors).await;</span>
@@ -193,12 +191,8 @@
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>::{<span class="ident">Debug</span>, <span class="ident">Display</span>};
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">hash</span>::<span class="ident">Hash</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">futures_channel</span>;
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">futures_core</span>;
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">futures_sink</span>;
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">futures_util</span>;
-
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">client</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">client_messages</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">errors</span>::<span class="kw-2">*</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">sender</span>::<span class="kw-2">*</span>;
 

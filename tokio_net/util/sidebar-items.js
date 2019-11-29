@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["PollEvented","Associates an I/O resource that implements the [`std::io::Read`] and/or [`std::io::Write`] traits with the reactor that drives it."]]});

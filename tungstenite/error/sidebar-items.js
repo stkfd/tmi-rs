@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["Error","Possible WebSocket errors"]],"mod":[["tls","TLS error wrapper module, feature-gated."]],"type":[["Result","Result type of all Tungstenite library calls."]]});

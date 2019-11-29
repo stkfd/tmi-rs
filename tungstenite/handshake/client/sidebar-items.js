@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["ClientHandshake","Client handshake role."],["Request","Client request."],["Response","Server response."]]});

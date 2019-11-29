@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["ReuniteError","Error indicating two halves were not from the same socket, and thus could not be `reunite`d."],["UdpSocketRecvHalf","The recv half after `split`."],["UdpSocketSendHalf","The send half after `split`."]]});

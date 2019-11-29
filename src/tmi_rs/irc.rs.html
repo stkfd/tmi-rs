@@ -342,6 +342,41 @@
 <span id="342">342</span>
 <span id="343">343</span>
 <span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
+<span id="362">362</span>
+<span id="363">363</span>
+<span id="364">364</span>
+<span id="365">365</span>
+<span id="366">366</span>
+<span id="367">367</span>
+<span id="368">368</span>
+<span id="369">369</span>
+<span id="370">370</span>
+<span id="371">371</span>
+<span id="372">372</span>
+<span id="373">373</span>
+<span id="374">374</span>
+<span id="375">375</span>
+<span id="376">376</span>
+<span id="377">377</span>
+<span id="378">378</span>
+<span id="379">379</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Parser for twitch flavored IRC</span>
 
@@ -364,7 +399,7 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>, <span class="ident">Eq</span>, <span class="ident">PartialEq</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">IrcMessage</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">StringRef</span><span class="op">&gt;</span> {
     <span class="doccomment">/// IRCv3 tags</span>
-    <span class="kw">pub</span> <span class="ident">tags</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">FnvHashMap</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">tags</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">FnvHashMap</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">String</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// IRC prefix</span>
     <span class="kw">pub</span> <span class="ident">prefix</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">IrcPrefix</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>,
     <span class="doccomment">/// IRC Command name</span>
@@ -562,7 +597,7 @@
 }
 
 <span class="doccomment">/// Parse IRCv3 tags into a HashMap</span>
-<span class="kw">fn</span> <span class="ident">irc_tags</span>(<span class="ident">input</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">IResult</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">FnvHashMap</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="kw-2">&amp;</span><span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+<span class="kw">fn</span> <span class="ident">irc_tags</span>(<span class="ident">input</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">IResult</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">FnvHashMap</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="ident">String</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="kw">let</span> (<span class="ident">remaining</span>, <span class="ident">list_opt</span>) <span class="op">=</span> <span class="ident">opt</span>(<span class="ident">delimited</span>(
         <span class="ident">char</span>(<span class="string">&#39;@&#39;</span>),
         <span class="ident">separated_list</span>(<span class="ident">char</span>(<span class="string">&#39;;&#39;</span>), <span class="ident">irc_tag</span>),
@@ -583,15 +618,20 @@
 }
 
 <span class="doccomment">/// Parse a single IRCv3 tag</span>
-<span class="kw">fn</span> <span class="ident">irc_tag</span>(<span class="ident">input</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">IResult</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span>, (<span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span><span class="op">&gt;</span>)<span class="op">&gt;</span> {
-    <span class="kw">let</span> (<span class="ident">remaining</span>, (<span class="ident">key</span>, <span class="ident">val</span>)) <span class="op">=</span> <span class="ident">tuple</span>((
+<span class="kw">fn</span> <span class="ident">irc_tag</span>(<span class="ident">input</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">IResult</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span>, (<span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span>)<span class="op">&gt;</span> {
+    <span class="kw">let</span> (<span class="ident">remaining</span>, (<span class="ident">key</span>, <span class="ident">val_opt</span>)) <span class="op">=</span> <span class="ident">tuple</span>((
         <span class="ident">irc_tag_key_str</span>,
         <span class="ident">opt</span>(<span class="ident">preceded</span>(
             <span class="ident">char</span>(<span class="string">&#39;=&#39;</span>),
             <span class="ident">opt</span>(<span class="ident">take_while1</span>(<span class="op">|</span><span class="ident">c</span>: <span class="ident">char</span><span class="op">|</span> <span class="op">!</span><span class="string">&quot; ;&quot;</span>.<span class="ident">contains</span>(<span class="ident">c</span>))),
         )),
     ))(<span class="ident">input</span>)<span class="question-mark">?</span>;
-    <span class="prelude-val">Ok</span>((<span class="ident">remaining</span>, (<span class="ident">key</span>, <span class="ident">val</span>.<span class="ident">and_then</span>(<span class="ident">identity</span>))))
+    <span class="kw">let</span> <span class="ident">unesc_val</span> <span class="op">=</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="prelude-val">Some</span>(<span class="ident">val</span>)) <span class="op">=</span> <span class="ident">val_opt</span> {
+        <span class="prelude-val">Some</span>(<span class="ident">unescape_tag_value</span>(<span class="ident">val</span>))
+    } <span class="kw">else</span> {
+        <span class="prelude-val">None</span>
+    };
+    <span class="prelude-val">Ok</span>((<span class="ident">remaining</span>, (<span class="ident">key</span>, <span class="ident">unesc_val</span>)))
 }
 
 <span class="kw">fn</span> <span class="ident">irc_tag_key_str</span>(<span class="ident">input</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">IResult</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="ident">str</span>, <span class="kw-2">&amp;</span><span class="ident">str</span><span class="op">&gt;</span> {
@@ -617,6 +657,27 @@
     <span class="ident">take_while</span>(<span class="op">|</span><span class="ident">c</span><span class="op">|</span> <span class="ident">c</span> <span class="op">=</span><span class="op">=</span> <span class="string">&#39; &#39;</span>)(<span class="ident">input</span>)
 }
 
+<span class="doccomment">/// Unescape tag values according to irc spec</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unescape_tag_value</span>(<span class="ident">value</span>: <span class="kw-2">&amp;</span><span class="ident">str</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">String</span> {
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">unescaped</span> <span class="op">=</span> <span class="ident">String</span>::<span class="ident">with_capacity</span>(<span class="ident">value</span>.<span class="ident">len</span>());
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">iter</span> <span class="op">=</span> <span class="ident">value</span>.<span class="ident">chars</span>();
+    <span class="kw">while</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">chr</span>) <span class="op">=</span> <span class="ident">iter</span>.<span class="ident">next</span>() {
+        <span class="kw">match</span> <span class="ident">chr</span> {
+            <span class="string">&#39;\\&#39;</span> <span class="op">=</span><span class="op">&gt;</span> <span class="kw">match</span> <span class="ident">iter</span>.<span class="ident">next</span>() {
+                <span class="prelude-val">Some</span>(<span class="string">&#39;:&#39;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">unescaped</span>.<span class="ident">push</span>(<span class="string">&#39;;&#39;</span>),
+                <span class="prelude-val">Some</span>(<span class="string">&#39;s&#39;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">unescaped</span>.<span class="ident">push</span>(<span class="string">&#39; &#39;</span>),
+                <span class="prelude-val">Some</span>(<span class="string">&#39;\\&#39;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">unescaped</span>.<span class="ident">push</span>(<span class="string">&#39;\\&#39;</span>),
+                <span class="prelude-val">Some</span>(<span class="string">&#39;r&#39;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">unescaped</span>.<span class="ident">push</span>(<span class="string">&#39;\r&#39;</span>),
+                <span class="prelude-val">Some</span>(<span class="string">&#39;n&#39;</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">unescaped</span>.<span class="ident">push</span>(<span class="string">&#39;\n&#39;</span>),
+                <span class="prelude-val">Some</span>(<span class="ident">other</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="ident">unescaped</span>.<span class="ident">push</span>(<span class="ident">other</span>),
+                <span class="prelude-val">None</span> <span class="op">=</span><span class="op">&gt;</span> {}
+            },
+            <span class="ident">other</span> <span class="op">=</span><span class="op">&gt;</span> <span class="ident">unescaped</span>.<span class="ident">push</span>(<span class="ident">other</span>),
+        }
+    }
+    <span class="ident">unescaped</span>
+}
+
 <span class="comment">// ------------------------------ TESTS ------------------------------</span>
 
 <span class="attribute">#[<span class="ident">test</span>]</span>
@@ -628,6 +689,15 @@
     <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">map</span>[<span class="string">&quot;tag-name-1&quot;</span>], <span class="string">&quot;&lt;tag-value-1&gt;&quot;</span>);
     <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">map</span>[<span class="string">&quot;tag-name-2&quot;</span>], <span class="string">&quot;&lt;tag-value-2&gt;&quot;</span>);
     <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">map</span>.<span class="ident">contains_key</span>(<span class="string">&quot;empty-tag&quot;</span>), <span class="bool-val">false</span>);
+}
+
+<span class="attribute">#[<span class="ident">test</span>]</span>
+<span class="kw">fn</span> <span class="ident">test_irc_tags_escaped</span>() {
+    <span class="kw">let</span> <span class="ident">tag_str</span> <span class="op">=</span> <span class="string">&quot;@tag-name=escape\\stest\\r\\n\\:\\s\\\\&quot;</span>;
+    <span class="kw">let</span> (<span class="ident">remaining</span>, <span class="ident">map</span>) <span class="op">=</span> <span class="ident">irc_tags</span>(<span class="ident">tag_str</span>).<span class="ident">unwrap</span>();
+    <span class="kw">let</span> <span class="ident">map</span> <span class="op">=</span> <span class="ident">map</span>.<span class="ident">unwrap</span>();
+    <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">remaining</span>.<span class="ident">len</span>(), <span class="number">0</span>);
+    <span class="macro">assert_eq</span><span class="macro">!</span>(<span class="ident">map</span>[<span class="string">&quot;tag-name&quot;</span>], <span class="string">&quot;escape test\r\n; \\&quot;</span>);
 }
 
 <span class="attribute">#[<span class="ident">test</span>]</span>

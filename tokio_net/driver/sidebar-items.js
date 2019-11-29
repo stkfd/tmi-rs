@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["set_default","Sets handle for a default reactor, returning guard that unsets it on drop."]],"struct":[["DefaultGuard","Guard that resets current reactor on drop."],["Handle","A reference to a reactor."],["Reactor","The core reactor, or event loop."],["Registration","Associates an I/O resource with the reactor instance that drives it."]]});

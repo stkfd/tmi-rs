@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["ReadHalf","Read half of a `TcpStream`."],["WriteHalf","Write half of a `TcpStream`."]]});

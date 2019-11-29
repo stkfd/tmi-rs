@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["IrcMessage","Represents an IRC message"],["IrcPrefix","Struct containing the parts of the IRC message prefix"]]});
+initSidebarItems({"fn":[["unescape_tag_value","Unescape tag values according to irc spec"]],"struct":[["IrcMessage","Represents an IRC message"],["IrcPrefix","Struct containing the parts of the IRC message prefix"]]});

@@ -841,6 +841,20 @@
 <span id="841">841</span>
 <span id="842">842</span>
 <span id="843">843</span>
+<span id="844">844</span>
+<span id="845">845</span>
+<span id="846">846</span>
+<span id="847">847</span>
+<span id="848">848</span>
+<span id="849">849</span>
+<span id="850">850</span>
+<span id="851">851</span>
+<span id="852">852</span>
+<span id="853">853</span>
+<span id="854">854</span>
+<span id="855">855</span>
+<span id="856">856</span>
+<span id="857">857</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Contains the structs that hold event specific data, and traits to access their contents in</span>
 <span class="doccomment">//! EventData&lt;_, _&gt; structs.</span>
@@ -951,12 +965,27 @@
     }
 }
 
+<span class="doccomment">/// Event message access trait</span>
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">MessageEventData</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
+    <span class="doccomment">/// Actual message</span>
+    <span class="kw">fn</span> <span class="ident">message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span>;
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">U</span><span class="op">&gt;</span> <span class="ident">MessageEventData</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">EventData</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">U</span><span class="op">&gt;</span>
+<span class="kw">where</span>
+    <span class="ident">T</span>: <span class="ident">StringRef</span>,
+    <span class="ident">U</span>: <span class="ident">Debug</span> <span class="op">+</span> <span class="ident">Clone</span> <span class="op">+</span> <span class="ident">Eq</span> <span class="op">+</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">ChannelMessageEvent</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+{
+    <span class="attribute">#[<span class="ident">inline</span>]</span>
+    <span class="kw">fn</span> <span class="ident">message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span> {
+        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">event</span>.<span class="ident">as_ref</span>().<span class="ident">message</span>
+    }
+}
+
 <span class="doccomment">/// Accessors for channel message event data</span>
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">ChannelMessageEventData</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Channel name for the message</span>
     <span class="kw">fn</span> <span class="ident">channel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span>;
-    <span class="doccomment">/// Actual message</span>
-    <span class="kw">fn</span> <span class="ident">message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span>;
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">U</span><span class="op">&gt;</span> <span class="ident">ChannelMessageEventData</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">EventData</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">U</span><span class="op">&gt;</span>
@@ -968,12 +997,6 @@
     <span class="attribute">#[<span class="ident">inline</span>]</span>
     <span class="kw">fn</span> <span class="ident">channel</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">event</span>.<span class="ident">as_ref</span>().<span class="ident">channel</span>
-    }
-
-    <span class="doccomment">/// Get the message</span>
-    <span class="attribute">#[<span class="ident">inline</span>]</span>
-    <span class="kw">fn</span> <span class="ident">message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span> {
-        <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">event</span>.<span class="ident">as_ref</span>().<span class="ident">message</span>
     }
 }
 
@@ -1305,8 +1328,6 @@
 <span class="kw">pub</span> <span class="kw">trait</span> <span class="ident">WhisperEventData</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">StringRef</span><span class="op">&gt;</span> {
     <span class="doccomment">/// Recipient of the whisper</span>
     <span class="kw">fn</span> <span class="ident">recipient</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span>;
-    <span class="doccomment">/// The message</span>
-    <span class="kw">fn</span> <span class="ident">message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span>;
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">StringRef</span><span class="op">&gt;</span> <span class="ident">WhisperEventData</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">EventData</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">WhisperEvent</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
@@ -1314,6 +1335,9 @@
     <span class="kw">fn</span> <span class="ident">recipient</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">event</span>.<span class="ident">recipient</span>
     }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">StringRef</span><span class="op">&gt;</span> <span class="ident">MessageEventData</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="kw">for</span> <span class="ident">EventData</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">WhisperEvent</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="attribute">#[<span class="ident">inline</span>]</span>
     <span class="kw">fn</span> <span class="ident">message</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw-2">&amp;</span><span class="ident">T</span> {
         <span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">event</span>.<span class="ident">message</span>
@@ -1560,7 +1584,11 @@
                 <span class="ident">sender</span>: <span class="prelude-val">None</span>,
                 <span class="ident">event</span>: <span class="ident">ChannelMessageEvent</span>::<span class="ident">new</span>(<span class="string">&quot;#dallas&quot;</span>, <span class="string">&quot;HeyGuys&quot;</span>).<span class="ident">into</span>(),
                 <span class="ident">tags</span>: <span class="prelude-val">Some</span>(<span class="ident">FnvHashMap</span>::<span class="ident">from_iter</span>(
-                    <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;login&quot;</span>, <span class="string">&quot;ronni&quot;</span>), (<span class="string">&quot;target-msg-id&quot;</span>, <span class="string">&quot;abc-123-def&quot;</span>)].<span class="ident">into_iter</span>()
+                    <span class="macro">vec</span><span class="macro">!</span>[
+                        (<span class="string">&quot;login&quot;</span>, <span class="string">&quot;ronni&quot;</span>.<span class="ident">to_string</span>()),
+                        (<span class="string">&quot;target-msg-id&quot;</span>, <span class="string">&quot;abc-123-def&quot;</span>.<span class="ident">to_string</span>())
+                    ]
+                    .<span class="ident">into_iter</span>()
                 ))
             })
         )
@@ -1620,7 +1648,7 @@
                 <span class="ident">event</span>: <span class="ident">ChannelMessageEvent</span>::<span class="ident">new</span>(<span class="string">&quot;#dallas&quot;</span>, <span class="string">&quot;This room is no longer in slow mode.&quot;</span>)
                     .<span class="ident">into</span>(),
                 <span class="ident">tags</span>: <span class="prelude-val">Some</span>(<span class="ident">FnvHashMap</span>::<span class="ident">from_iter</span>(
-                    <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;msg-id&quot;</span>, <span class="string">&quot;slow_off&quot;</span>)].<span class="ident">into_iter</span>()
+                    <span class="macro">vec</span><span class="macro">!</span>[(<span class="string">&quot;msg-id&quot;</span>, <span class="string">&quot;slow_off&quot;</span>.<span class="ident">to_string</span>())].<span class="ident">into_iter</span>()
                 ))
             })
         )
@@ -1642,11 +1670,11 @@
                 <span class="ident">event</span>: <span class="ident">ChannelEvent</span>::<span class="ident">new</span>(<span class="string">&quot;#dallas&quot;</span>).<span class="ident">into</span>(),
                 <span class="ident">tags</span>: <span class="prelude-val">Some</span>(<span class="ident">FnvHashMap</span>::<span class="ident">from_iter</span>(
                     <span class="macro">vec</span><span class="macro">!</span>[
-                        (<span class="string">&quot;emote-only&quot;</span>, <span class="string">&quot;0&quot;</span>),
-                        (<span class="string">&quot;followers-only&quot;</span>, <span class="string">&quot;0&quot;</span>),
-                        (<span class="string">&quot;subs-only&quot;</span>, <span class="string">&quot;0&quot;</span>),
-                        (<span class="string">&quot;slow&quot;</span>, <span class="string">&quot;0&quot;</span>),
-                        (<span class="string">&quot;r9k&quot;</span>, <span class="string">&quot;0&quot;</span>)
+                        (<span class="string">&quot;emote-only&quot;</span>, <span class="string">&quot;0&quot;</span>.<span class="ident">to_string</span>()),
+                        (<span class="string">&quot;followers-only&quot;</span>, <span class="string">&quot;0&quot;</span>.<span class="ident">to_string</span>()),
+                        (<span class="string">&quot;subs-only&quot;</span>, <span class="string">&quot;0&quot;</span>.<span class="ident">to_string</span>()),
+                        (<span class="string">&quot;slow&quot;</span>, <span class="string">&quot;0&quot;</span>.<span class="ident">to_string</span>()),
+                        (<span class="string">&quot;r9k&quot;</span>, <span class="string">&quot;0&quot;</span>.<span class="ident">to_string</span>())
                     ]
                     .<span class="ident">into_iter</span>()
                 ))

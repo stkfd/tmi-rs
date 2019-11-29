@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["FuturesUnordered","A set of futures which may complete in any order."],["IterMut","Mutable iterator over all futures in the unordered set."],["IterPinMut","Mutable iterator over all futures in the unordered set."]]});
