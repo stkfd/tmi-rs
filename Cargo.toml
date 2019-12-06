@@ -19,7 +19,7 @@ futures-sink = "0.3"
 futures-util = "0.3"
 futures-channel = { version = "0.3", features = ["sink"] }
 pin-utils = "0.1.0-alpha.4"
-tokio-tungstenite = { git = "https://github.com/cere42/tokio-tungstenite.git", rev = "61fb991a06d3eb4e1f2ac2997985bd1cf72aefda", features=["connect", "tls"] }
+tokio-tungstenite = { git = "https://github.com/dbcfd/tokio-tungstenite.git", rev = "ed8879878f8d1", features=["connect", "tls"] }
 tokio-tls = "0.3.0"
 url = "2.1.0"
 nom = "5.0.1"
