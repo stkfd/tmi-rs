@@ -261,7 +261,10 @@ impl ClientMessage<String> {
     }
 
     /// Send a whisper
-    pub fn whisper<S: Into<String> + Borrow<str>>(user: S, message: S) -> Self {
+    pub fn whisper<S1: Into<String> + Borrow<str>, S2: Into<String> + Borrow<str>>(
+        user: S1,
+        message: S2,
+    ) -> Self {
         ClientMessage::PrivMsg {
             channel: String::from("jtv"),
             message: Command::Whisper {
