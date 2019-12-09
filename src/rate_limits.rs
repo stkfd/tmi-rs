@@ -9,11 +9,11 @@ use std::time::Duration;
 use fnv::FnvHashMap;
 use futures_core::stream::{FusedStream, Stream};
 use futures_core::task::{Context, Poll};
-use futures_util::FutureExt;
 use futures_util::stream::StreamExt;
+use futures_util::FutureExt;
 use parking_lot::{Mutex, RwLock};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
-use tokio::time::{Delay, delay_for, Instant};
+use tokio::time::{delay_for, Delay, Instant};
 
 /// Rate limiting sink extension methods
 pub trait RateLimitExt<Item>: Stream {
@@ -557,7 +557,10 @@ mod test {
     use tokio::time::{advance, pause};
     use tokio_test::{assert_pending, assert_ready, assert_ready_eq};
 
-    use crate::rate_limits::{RateLimitable, RateLimitBucket, RateLimitBucketConfig, RateLimiterConfig, RateLimitExt, SlowModeLimit};
+    use crate::rate_limits::{
+        RateLimitBucket, RateLimitBucketConfig, RateLimitExt, RateLimitable, RateLimiterConfig,
+        SlowModeLimit,
+    };
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct Limitable(Option<String>);
