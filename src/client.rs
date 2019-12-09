@@ -85,11 +85,11 @@ impl TwitchClient {
         })?;
 
         let (mut ws_sink, ws_recv) = TwitchChatStream::new(ws).split::<Message>();
-        let mut message_bus = ::future_bus::bounded::<Arc<Event<String>>>(100);
-        let mut error_bus = ::future_bus::bounded::<Arc<Error>>(20);
+        let mut message_bus = ::future_bus::bounded::<Arc<Event<String>>>(200);
+        let mut error_bus = ::future_bus::bounded::<Arc<Error>>(200);
         let message_receiver = message_bus.subscribe();
         let error_receiver = error_bus.subscribe();
-        let (client_sender, client_recv) = mpsc::channel::<ClientMessage<String>>(100);
+        let (client_sender, client_recv) = mpsc::unbounded::<ClientMessage<String>>();
         let mut sender = TwitchChatSender::new(client_sender);
 
         tokio::spawn(async {
@@ -185,7 +185,7 @@ pub type ErrorReceiver =
     BusSubscriber<Arc<Error>, mpsc::Sender<Arc<Error>>, mpsc::Receiver<Arc<Error>>>;
 
 /// Sender to push messages to Twitch chat
-pub type ChatSender = TwitchChatSender<mpsc::Sender<ClientMessage<String>>>;
+pub type ChatSender = TwitchChatSender<mpsc::UnboundedSender<ClientMessage<String>>>;
 
 /// Contains the Streams and Sinks associated with an underlying websocket connection. They
 /// can be cloned freely to be shared across different tasks and threads.
