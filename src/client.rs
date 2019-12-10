@@ -90,7 +90,7 @@ impl TwitchClient {
         let message_receiver = message_bus.subscribe();
         let error_receiver = error_bus.subscribe();
         let (client_sender, client_recv) = mpsc::unbounded::<ClientMessage<String>>();
-        let mut sender = TwitchChatSender::new(client_sender);
+        let sender = TwitchChatSender::new(client_sender);
 
         tokio::spawn(async {
             let mut ws_recv = ws_recv;
@@ -117,7 +117,7 @@ impl TwitchClient {
 
         // do any internal message handling like rate limit detection and ping pong
         let internal_receiver = message_receiver.try_clone().expect("Get internal receiver");
-        let mut internal_sender = sender.clone();
+        let internal_sender = sender.clone();
         let rate_limiter = self.rate_limiter.clone();
         tokio::spawn(async move {
             let responses = internal_receiver.filter_map(|e: Arc<Event<String>>| {
@@ -137,7 +137,7 @@ impl TwitchClient {
 
             responses
                 .map(Ok)
-                .forward(&mut internal_sender)
+                .forward(&internal_sender)
                 .await
                 .unwrap();
         });
@@ -152,10 +152,10 @@ impl TwitchClient {
         if self.cap_membership {
             capabilities.push(Capability::Membership)
         }
-        sender
+        (&sender)
             .send(ClientMessage::<String>::CapRequest(capabilities))
             .await?;
-        sender
+        (&sender)
             .send_all(&mut ClientMessage::login(self.username.clone(), self.token.clone()).map(Ok))
             .await?;
 

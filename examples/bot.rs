@@ -28,10 +28,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .into();
 
     let TwitchChatConnection {
-        mut sender,
+        sender,
         receiver,
         error_receiver,
     } = client.connect().await?;
+    let mut sender = &sender;
 
     // join a channel
     sender.send(ClientMessage::join(channel.clone())).await?;
@@ -53,7 +54,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 })
             })
             .map(Ok)
-            .forward(&mut sender)
+            .forward(sender)
             .await;
 
         if let Err(e) = send_result {

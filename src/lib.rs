@@ -31,7 +31,7 @@
 //!     let TwitchChatConnection { mut sender, receiver, error_receiver } = client.connect().await?;
 //!
 //!     // join a channel
-//!     sender.send(ClientMessage::join(channel.clone())).await?;
+//!     (&sender).send(ClientMessage::join(channel.clone())).await?;
 //!
 //!     // process messages and do stuff with the data
 //!     let process_messages = async {
@@ -47,7 +47,7 @@
 //!                 })
 //!             })
 //!             .map(Ok)
-//!             .forward(&mut sender).await;
+//!             .forward(&sender).await;
 //!
 //!         if let Err(e) = send_result { error!("{}", e); }
 //!     };

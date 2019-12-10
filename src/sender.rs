@@ -17,37 +17,30 @@ pub struct TwitchChatSender<Si: Clone + Unpin> {
 
 impl<Si: Unpin + Clone> Unpin for TwitchChatSender<Si> {}
 
-impl<Si, M> Sink<M> for TwitchChatSender<Si>
+impl<'a, Si, M> Sink<M> for &'a TwitchChatSender<Si>
 where
-    Si: Sink<ClientMessage<String>> + Unpin + Clone,
+    Si: Unpin + Clone,
+    &'a Si: Sink<ClientMessage<String>>,
     M: Into<ClientMessage<String>>,
 {
     type Error = Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut Pin::into_inner(self).sink)
-            .poll_ready(cx)
-            .map_err(|_| Error::SendError)
+        <&Si>::poll_ready(Pin::new(&mut &self.sink), cx).map_err(|_| Error::SendError)
     }
 
     fn start_send(self: Pin<&mut Self>, item: M) -> Result<(), Self::Error> {
         let msg: ClientMessage<String> = item.into();
         debug!("> {}", msg);
-        Pin::new(&mut Pin::into_inner(self).sink)
-            .start_send(msg)
-            .map_err(|_| Error::SendError)
+        <&Si>::start_send(Pin::new(&mut &self.sink), msg).map_err(|_| Error::SendError)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut Pin::into_inner(self).sink)
-            .poll_flush(cx)
-            .map_err(|_| Error::SendError)
+        <&Si>::poll_flush(Pin::new(&mut &self.sink), cx).map_err(|_| Error::SendError)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut Pin::into_inner(self).sink)
-            .poll_close(cx)
-            .map_err(|_| Error::SendError)
+        <&Si>::poll_close(Pin::new(&mut &self.sink), cx).map_err(|_| Error::SendError)
     }
 }
 
