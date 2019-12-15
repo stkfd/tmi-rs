@@ -855,11 +855,15 @@
 <span id="855">855</span>
 <span id="856">856</span>
 <span id="857">857</span>
+<span id="858">858</span>
+<span id="859">859</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Contains the structs that hold event specific data, and traits to access their contents in</span>
 <span class="doccomment">//! EventData&lt;_, _&gt; structs.</span>
 
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>::<span class="ident">Debug</span>;
+
+<span class="kw">use</span> <span class="ident">derive_more</span>::{<span class="ident">From</span>, <span class="ident">Into</span>};
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">event</span>::{<span class="ident">EventData</span>, <span class="ident">ToOwnedEvent</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">util</span>::<span class="ident">RefToString</span>;

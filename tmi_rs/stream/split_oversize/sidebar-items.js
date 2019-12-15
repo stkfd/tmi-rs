@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["SplitOversize","Splits oversize messages into multiple messages. See `split_oversize`"]]});

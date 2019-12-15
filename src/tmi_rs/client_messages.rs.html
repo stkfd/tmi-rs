@@ -460,6 +460,7 @@
 <span id="460">460</span>
 <span id="461">461</span>
 <span id="462">462</span>
+<span id="463">463</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Types to represent messages sent by the client</span>
 
@@ -467,15 +468,16 @@
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>;
 <span class="kw">use</span> <span class="ident">tokio_tungstenite</span>::<span class="ident">tungstenite</span>::<span class="ident">Message</span>;
 
-<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">rate_limits</span>::<span class="ident">RateLimitable</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">stream</span>::<span class="ident">rate_limits</span>::<span class="ident">RateLimitable</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">StringRef</span>;
 <span class="kw">use</span> <span class="ident">futures_core</span>::<span class="ident">Stream</span>;
 
 <span class="doccomment">/// Messages to be sent from the client to twitch servers</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>)]</span>
-<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ClientMessage</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">ClientMessage</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">StringRef</span><span class="op">&gt;</span> {
     <span class="ident">PrivMsg</span> { <span class="ident">channel</span>: <span class="ident">T</span>, <span class="ident">message</span>: <span class="ident">T</span> },
+    <span class="ident">Whisper</span> { <span class="ident">recipient</span>: <span class="ident">T</span>, <span class="ident">message</span>: <span class="ident">T</span> },
     <span class="ident">Join</span>(<span class="ident">T</span>),
     <span class="ident">Part</span>(<span class="ident">T</span>),
     <span class="ident">Nick</span>(<span class="ident">T</span>),
@@ -486,7 +488,7 @@
 }
 
 <span class="kw">impl</span> <span class="ident">ClientMessage</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> {
-    <span class="doccomment">/// Send a whisper</span>
+    <span class="doccomment">/// Send a channel message</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">message</span><span class="op">&lt;</span><span class="ident">S1</span>: <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">str</span><span class="op">&gt;</span>, <span class="ident">S2</span>: <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span>(
         <span class="ident">channel</span>: <span class="ident">S1</span>,
         <span class="ident">message</span>: <span class="ident">S2</span>,
@@ -503,7 +505,7 @@
     }
 
     <span class="doccomment">/// Authenticates the user. Caution: this is normally called automatically when calling</span>
-    <span class="doccomment">/// [`TwitchClient::connect`](crate::TwitchClient::connect), only use it if this stream was created in some other</span>
+    <span class="doccomment">/// [`TwitchClient::connect`](tmi_rs::TwitchClient::connect), only use it if this stream was created in some other</span>
     <span class="doccomment">/// way.</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">login</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">username</span>: <span class="ident">S</span>, <span class="ident">token</span>: <span class="ident">S</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="kw">impl</span> <span class="ident">Stream</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="self">Self</span><span class="op">&gt;</span> {
         <span class="ident">futures_util</span>::<span class="ident">stream</span>::<span class="ident">iter</span>(<span class="macro">vec</span><span class="macro">!</span>[
@@ -724,14 +726,13 @@
     }
 
     <span class="doccomment">/// Send a whisper</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">whisper</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">user</span>: <span class="ident">S</span>, <span class="ident">message</span>: <span class="ident">S</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
-        <span class="ident">ClientMessage</span>::<span class="ident">PrivMsg</span> {
-            <span class="ident">channel</span>: <span class="ident">String</span>::<span class="ident">from</span>(<span class="string">&quot;jtv&quot;</span>),
-            <span class="ident">message</span>: <span class="ident">Command</span>::<span class="ident">Whisper</span> {
-                <span class="ident">user</span>: <span class="ident">user</span>.<span class="ident">borrow</span>(),
-                <span class="ident">message</span>: <span class="ident">message</span>.<span class="ident">borrow</span>(),
-            }
-            .<span class="ident">to_string</span>(),
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">whisper</span><span class="op">&lt;</span><span class="ident">S1</span>: <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">str</span><span class="op">&gt;</span>, <span class="ident">S2</span>: <span class="ident">Into</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">+</span> <span class="ident">Borrow</span><span class="op">&lt;</span><span class="ident">str</span><span class="op">&gt;</span><span class="op">&gt;</span>(
+        <span class="ident">user</span>: <span class="ident">S1</span>,
+        <span class="ident">message</span>: <span class="ident">S2</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="self">Self</span> {
+        <span class="ident">ClientMessage</span>::<span class="ident">Whisper</span> {
+            <span class="ident">recipient</span>: <span class="ident">user</span>.<span class="ident">into</span>(),
+            <span class="ident">message</span>: <span class="ident">message</span>.<span class="ident">into</span>(),
         }
     }
 }
@@ -741,6 +742,9 @@
         <span class="kw">match</span> <span class="self">self</span> {
             <span class="ident">ClientMessage</span>::<span class="ident">PrivMsg</span> { <span class="ident">channel</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
                 <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;PRIVMSG {} :{}&quot;</span>, <span class="ident">channel</span>, <span class="ident">message</span>)
+            }
+            <span class="ident">ClientMessage</span>::<span class="ident">Whisper</span> { <span class="ident">recipient</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> {
+                <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;PRIVMSG jtv :/w {} {}&quot;</span>, <span class="ident">recipient</span>, <span class="ident">message</span>)
             }
             <span class="ident">ClientMessage</span>::<span class="ident">Join</span>(<span class="ident">channel</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;JOIN {}&quot;</span>, <span class="ident">channel</span>),
             <span class="ident">ClientMessage</span>::<span class="ident">Part</span>(<span class="ident">channel</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;PART {}&quot;</span>, <span class="ident">channel</span>),
@@ -818,7 +822,6 @@
     <span class="ident">Timeout</span> { <span class="ident">user</span>: <span class="ident">T</span>, <span class="ident">time</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> },
     <span class="ident">Vip</span>(<span class="ident">T</span>),
     <span class="ident">Vips</span>,
-    <span class="ident">Whisper</span> { <span class="ident">user</span>: <span class="ident">T</span>, <span class="ident">message</span>: <span class="ident">T</span> },
 }
 
 <span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>: <span class="ident">StringRef</span><span class="op">&gt;</span> <span class="ident">fmt</span>::<span class="ident">Display</span> <span class="kw">for</span> <span class="ident">Command</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> {
@@ -891,13 +894,12 @@
             }
             <span class="ident">Command</span>::<span class="ident">Vip</span>(<span class="ident">user</span>) <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;/vip {}&quot;</span>, <span class="ident">user</span>),
             <span class="ident">Command</span>::<span class="ident">Vips</span> <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;/vips&quot;</span>),
-            <span class="ident">Command</span>::<span class="ident">Whisper</span> { <span class="ident">user</span>, <span class="ident">message</span> } <span class="op">=</span><span class="op">&gt;</span> <span class="macro">write</span><span class="macro">!</span>(<span class="ident">f</span>, <span class="string">&quot;/w {} {}&quot;</span>, <span class="ident">user</span>, <span class="ident">message</span>),
         }
     }
 }
 
 <span class="doccomment">/// Twitch client capabilities</span>
-<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Copy</span>)]</span>
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">Eq</span>)]</span>
 <span class="kw">pub</span> <span class="kw">enum</span> <span class="ident">Capability</span> {
     <span class="doccomment">/// twitch.tv/membership capability</span>
     <span class="ident">Membership</span>,

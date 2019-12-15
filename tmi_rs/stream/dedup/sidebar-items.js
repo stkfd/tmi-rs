@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["DedupMessages","Deduplicator to bypass Twitch's 30 second duplicate message detection. See `dedup`."]]});

@@ -98,12 +98,6 @@
 <span id="98"> 98</span>
 <span id="99"> 99</span>
 <span id="100">100</span>
-<span id="101">101</span>
-<span id="102">102</span>
-<span id="103">103</span>
-<span id="104">104</span>
-<span id="105">105</span>
-<span id="106">106</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! A WebSocket based, asynchronous Twitch chat client.</span>
 <span class="doccomment">//!</span>
@@ -122,7 +116,7 @@
 <span class="doccomment">//! use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};</span>
 <span class="doccomment">//! use tmi_rs::client_messages::ClientMessage;</span>
 <span class="doccomment">//! use tmi_rs::event::*;</span>
-<span class="doccomment">//! use tmi_rs::rate_limits::RateLimiterConfig;</span>
+<span class="doccomment">//! use tmi_rs::stream::rate_limits::RateLimiterConfig;</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! #[tokio::main]</span>
 <span class="doccomment">//! async fn main() -&gt; Result&lt;(), Box&lt;dyn Error&gt;&gt; {</span>
@@ -138,7 +132,7 @@
 <span class="doccomment">//!     let TwitchChatConnection { mut sender, receiver, error_receiver } = client.connect().await?;</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//!     // join a channel</span>
-<span class="doccomment">//!     sender.send(ClientMessage::join(channel.clone())).await?;</span>
+<span class="doccomment">//!     (&amp;sender).send(ClientMessage::join(channel.clone())).await?;</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//!     // process messages and do stuff with the data</span>
 <span class="doccomment">//!     let process_messages = async {</span>
@@ -154,7 +148,7 @@
 <span class="doccomment">//!                 })</span>
 <span class="doccomment">//!             })</span>
 <span class="doccomment">//!             .map(Ok)</span>
-<span class="doccomment">//!             .forward(&amp;mut sender).await;</span>
+<span class="doccomment">//!             .forward(&amp;sender).await;</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//!         if let Err(e) = send_result { error!(&quot;{}&quot;, e); }</span>
 <span class="doccomment">//!     };</span>
@@ -177,13 +171,7 @@
 )]</span>
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
-<span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">derive_builder</span>;
-<span class="attribute">#[<span class="ident">macro_use</span>]</span>
-<span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">derive_more</span>;
-<span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">log</span>;
-<span class="attribute">#[<span class="ident">macro_use</span>]</span>
-<span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">pin_utils</span>;
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">smallvec</span>;
 
@@ -202,9 +190,9 @@
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">event</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">irc</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">irc_constants</span>;
-<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">rate_limits</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">selectors</span>;
 <span class="kw">mod</span> <span class="ident">sender</span>;
+<span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">stream</span>;
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod</span> <span class="ident">util</span>;
 
 <span class="doccomment">/// Trait that is used when generically referring to a &amp;str, String, or other type that can be</span>
