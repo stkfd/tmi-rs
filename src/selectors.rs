@@ -4,6 +4,7 @@
 // TODO: add example
 
 use std::hint::unreachable_unchecked;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -12,7 +13,6 @@ use futures_util::future::ready;
 
 use crate::event::*;
 use crate::StringRef;
-use std::marker::PhantomData;
 
 /// Contains a PRIVMSG event
 #[derive(Clone, Debug)]

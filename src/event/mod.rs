@@ -2,9 +2,11 @@
 //! from the twitch servers.
 
 use std::borrow::Borrow;
-use std::convert::{Into, TryFrom};
+use std::convert::{From, Into, TryFrom};
 use std::fmt::Debug;
+use std::sync::Arc;
 
+use derive_more::From;
 use fnv::FnvHashMap;
 
 pub use inner_data::*;
@@ -19,6 +21,10 @@ use crate::{Error, StringRef};
 mod inner_data;
 mod stream;
 pub mod tags;
+
+/// A Twitch event shared across multiple threads/tasks. The event is wrapped in an `Arc` and owns
+/// the strings contained in it.
+pub type SharedEvent = Arc<Event<String>>;
 
 /// Enum containing all event types that can be received from Twitch
 #[allow(missing_docs)]

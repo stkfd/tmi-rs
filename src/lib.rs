@@ -15,7 +15,7 @@
 //! use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
 //! use tmi_rs::client_messages::ClientMessage;
 //! use tmi_rs::event::*;
-//! use tmi_rs::rate_limits::RateLimiterConfig;
+//! use tmi_rs::stream::rate_limits::RateLimiterConfig;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn Error>> {
@@ -70,13 +70,7 @@
 )]
 
 #[macro_use]
-extern crate derive_builder;
-#[macro_use]
-extern crate derive_more;
-#[macro_use]
 extern crate log;
-#[macro_use]
-extern crate pin_utils;
 #[macro_use]
 extern crate smallvec;
 
@@ -95,9 +89,9 @@ mod errors;
 pub mod event;
 pub mod irc;
 pub mod irc_constants;
-pub mod rate_limits;
 pub mod selectors;
 mod sender;
+pub mod stream;
 pub(crate) mod util;
 
 /// Trait that is used when generically referring to a &str, String, or other type that can be

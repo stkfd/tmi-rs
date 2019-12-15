@@ -15,25 +15,6 @@ use parking_lot::{Mutex, RwLock};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use tokio::time::{delay_for, Delay, Instant};
 
-/// Rate limiting sink extension methods
-pub trait RateLimitExt<Item>: Stream {
-    /// Composes a fixed size buffered rate limiter in front of this sink. Messages passed into
-    /// the sink are treated according to their implementations of [`RateLimitable`](self::RateLimitable).
-    /// Messages that report rate limiting applies are put into a buffer which is sent  
-    fn rate_limited(
-        self,
-        capacity: usize,
-        rate_limiter: &Arc<RateLimiter>,
-    ) -> BufferedRateLimiter<Self, Item>
-    where
-        Self: Sized + Stream<Item = Item> + Unpin,
-        Item: RateLimitable,
-    {
-        BufferedRateLimiter::new(self, capacity, rate_limiter)
-    }
-}
-impl<Si, Item> RateLimitExt<Item> for Si where Si: Stream<Item = Item> {}
-
 /// Trait to apply to messages that contains information about which rate limits apply
 /// to the message
 pub trait RateLimitable {
@@ -530,7 +511,7 @@ impl RateLimitBucket {
 impl Stream for &RateLimitBucket {
     type Item = ();
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.refill();
 
         let mut count = self.counter.lock();
@@ -557,10 +538,11 @@ mod test {
     use tokio::time::{advance, pause};
     use tokio_test::{assert_pending, assert_ready, assert_ready_eq};
 
-    use crate::rate_limits::{
-        RateLimitBucket, RateLimitBucketConfig, RateLimitExt, RateLimitable, RateLimiterConfig,
-        SlowModeLimit,
+    use crate::stream::rate_limits::{
+        RateLimitBucket, RateLimitBucketConfig, RateLimitable, RateLimiterConfig, SlowModeLimit,
     };
+    use crate::stream::SendStreamExt;
+    use crate::ClientMessage;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct Limitable(Option<String>);
@@ -575,7 +557,7 @@ mod test {
         let cx = &mut noop_context();
         pause();
         let rate_limiter = Arc::new(RateLimiterConfig::default().into());
-        let a = Limitable(Some("a".to_string()));
+        let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
         let mut stream =
             iter(vec![a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
         assert_ready!(stream.poll_next_unpin(cx));
@@ -600,19 +582,19 @@ mod test {
         let cx = &mut noop_context();
         pause();
         let rate_limiter = Arc::new(RateLimiterConfig::default().into());
-        let a = Limitable(Some("a".to_string()));
+        let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
         let mut stream =
             iter(vec![a.clone(), a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
-        rate_limiter.set_slow_mode("a", SlowModeLimit::Channel(10));
+        rate_limiter.set_slow_mode("#channel", SlowModeLimit::Channel(10));
         assert_ready!(stream.poll_next_unpin(cx));
         assert_pending!(stream.poll_next_unpin(cx));
 
         advance(Duration::from_secs(1)).await;
-        rate_limiter.set_slow_mode("a", SlowModeLimit::Channel(5));
+        rate_limiter.set_slow_mode("#channel", SlowModeLimit::Channel(5));
 
         assert_ready_eq!(stream.poll_next_unpin(cx), Some(a.clone()));
 
-        rate_limiter.set_slow_mode("a", SlowModeLimit::Unlimited);
+        rate_limiter.set_slow_mode("#channel", SlowModeLimit::Unlimited);
         assert_ready_eq!(stream.poll_next_unpin(cx), Some(a));
     }
 
@@ -620,10 +602,10 @@ mod test {
     async fn test_custom_slowmode() {
         let cx = &mut noop_context();
         pause();
-        let a = Limitable(Some("a".to_string()));
+        let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
         let rate_limiter = Arc::new(RateLimiterConfig::default().into());
         let mut stream = iter(vec![a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
-        rate_limiter.set_slow_mode("a", SlowModeLimit::Channel(10));
+        rate_limiter.set_slow_mode("#channel", SlowModeLimit::Channel(10));
         assert_ready!(stream.poll_next_unpin(cx));
         advance(Duration::from_secs(5)).await;
         assert_pending!(stream.poll_next_unpin(cx));

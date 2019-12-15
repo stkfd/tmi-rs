@@ -7,6 +7,7 @@ use futures_core::stream::FusedStream;
 use futures_core::task::{Context, Poll};
 use futures_core::Stream;
 use futures_sink::Sink;
+use pin_utils::unsafe_pinned;
 use smallvec::SmallVec;
 use tokio_tungstenite::tungstenite::error::Error as WsError;
 use tokio_tungstenite::tungstenite::Message;
@@ -199,7 +200,7 @@ fn parse(msg_result: Result<Message, WsError>) -> EventBuffer {
                 SmallVec::new()
             }
         },
-        Err(e) => smallvec![Err(Error::WebsocketError {
+        Err(e) => smallvec::smallvec![Err(Error::WebsocketError {
             details: "Error receiving messages from the websocket connection".into(),
             source: e,
         })],

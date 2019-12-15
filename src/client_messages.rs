@@ -2,17 +2,19 @@
 
 use std::borrow::Borrow;
 use std::fmt;
+
+use futures_core::Stream;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::rate_limits::RateLimitable;
+use crate::stream::rate_limits::RateLimitable;
 use crate::StringRef;
-use futures_core::Stream;
 
 /// Messages to be sent from the client to twitch servers
 #[allow(missing_docs)]
-#[derive(Clone)]
-pub enum ClientMessage<T: Borrow<str>> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClientMessage<T: StringRef> {
     PrivMsg { channel: T, message: T },
+    Whisper { recipient: T, message: T },
     Join(T),
     Part(T),
     Nick(T),
@@ -23,7 +25,7 @@ pub enum ClientMessage<T: Borrow<str>> {
 }
 
 impl ClientMessage<String> {
-    /// Send a whisper
+    /// Send a channel message
     pub fn message<S1: Into<String> + Borrow<str>, S2: Into<String> + Borrow<str>>(
         channel: S1,
         message: S2,
@@ -40,7 +42,7 @@ impl ClientMessage<String> {
     }
 
     /// Authenticates the user. Caution: this is normally called automatically when calling
-    /// [`TwitchClient::connect`](crate::TwitchClient::connect), only use it if this stream was created in some other
+    /// [`TwitchClient::connect`](tmi_rs::TwitchClient::connect), only use it if this stream was created in some other
     /// way.
     pub fn login<S: Into<String> + Borrow<str>>(username: S, token: S) -> impl Stream<Item = Self> {
         futures_util::stream::iter(vec![
@@ -265,13 +267,9 @@ impl ClientMessage<String> {
         user: S1,
         message: S2,
     ) -> Self {
-        ClientMessage::PrivMsg {
-            channel: String::from("jtv"),
-            message: Command::Whisper {
-                user: user.borrow(),
-                message: message.borrow(),
-            }
-            .to_string(),
+        ClientMessage::Whisper {
+            recipient: user.into(),
+            message: message.into(),
         }
     }
 }
@@ -281,6 +279,9 @@ impl<T: StringRef> fmt::Display for ClientMessage<T> {
         match self {
             ClientMessage::PrivMsg { channel, message } => {
                 write!(f, "PRIVMSG {} :{}", channel, message)
+            }
+            ClientMessage::Whisper { recipient, message } => {
+                write!(f, "PRIVMSG jtv :/w {} {}", recipient, message)
             }
             ClientMessage::Join(channel) => write!(f, "JOIN {}", channel),
             ClientMessage::Part(channel) => write!(f, "PART {}", channel),
@@ -358,7 +359,6 @@ pub enum Command<T: Borrow<str>> {
     Timeout { user: T, time: Option<usize> },
     Vip(T),
     Vips,
-    Whisper { user: T, message: T },
 }
 
 impl<T: StringRef> fmt::Display for Command<T> {
@@ -431,13 +431,12 @@ impl<T: StringRef> fmt::Display for Command<T> {
             }
             Command::Vip(user) => write!(f, "/vip {}", user),
             Command::Vips => write!(f, "/vips"),
-            Command::Whisper { user, message } => write!(f, "/w {} {}", user, message),
         }
     }
 }
 
 /// Twitch client capabilities
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Capability {
     /// twitch.tv/membership capability
     Membership,

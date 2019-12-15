@@ -3,6 +3,8 @@
 
 use std::fmt::Debug;
 
+use derive_more::{From, Into};
+
 use crate::event::{EventData, ToOwnedEvent};
 use crate::util::RefToString;
 use crate::StringRef;

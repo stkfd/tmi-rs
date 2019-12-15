@@ -10,8 +10,8 @@ use futures::stream::StreamExt;
 
 use tmi_rs::client_messages::ClientMessage;
 use tmi_rs::event::*;
-use tmi_rs::rate_limits::RateLimiterConfig;
 use tmi_rs::selectors::priv_msg;
+use tmi_rs::stream::rate_limits::RateLimiterConfig;
 use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
 
 /// To run this example, the TWITCH_CHANNEL, TWITCH_USERNAME and TWITCH_AUTH environment variables
