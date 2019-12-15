@@ -15,7 +15,6 @@
 //! use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
 //! use tmi_rs::client_messages::ClientMessage;
 //! use tmi_rs::event::*;
-//! use tmi_rs::stream::rate_limits::RateLimiterConfig;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn Error>> {
@@ -24,9 +23,8 @@
 //!     let client: TwitchClient = TwitchClientConfigBuilder::default()
 //!         .username(env::var("TWITCH_USERNAME")?)
 //!         .token(env::var("TWITCH_AUTH")?)
-//!         .rate_limiter(RateLimiterConfig::default())
-//!         .build()?
-//!         .into();
+//!         .build()? // build config
+//!         .into(); // build client from config
 //!
 //!     let TwitchChatConnection { mut sender, receiver, error_receiver } = client.connect().await?;
 //!

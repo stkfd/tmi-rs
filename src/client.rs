@@ -52,6 +52,7 @@ pub struct TwitchClientConfig {
     pub send_middleware: Option<SendMiddlewareConstructor>,
 
     /// Rate limiting configuration
+    #[builder(default = "RateLimiterConfig::default()")]
     pub rate_limiter: RateLimiterConfig,
 }
 
