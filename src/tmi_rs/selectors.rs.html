@@ -73,6 +73,7 @@
 <span class="comment">// TODO: add example</span>
 
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">hint</span>::<span class="ident">unreachable_unchecked</span>;
+<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">marker</span>::<span class="ident">PhantomData</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">ops</span>::<span class="ident">Deref</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">sync</span>::<span class="ident">Arc</span>;
 
@@ -81,7 +82,6 @@
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">event</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">StringRef</span>;
-<span class="kw">use</span> <span class="ident">std</span>::<span class="ident">marker</span>::<span class="ident">PhantomData</span>;
 
 <span class="doccomment">/// Contains a PRIVMSG event</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Debug</span>)]</span>

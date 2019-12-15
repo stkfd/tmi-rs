@@ -461,16 +461,18 @@
 <span id="461">461</span>
 <span id="462">462</span>
 <span id="463">463</span>
+<span id="464">464</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Types to represent messages sent by the client</span>
 
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">borrow</span>::<span class="ident">Borrow</span>;
 <span class="kw">use</span> <span class="ident">std</span>::<span class="ident">fmt</span>;
+
+<span class="kw">use</span> <span class="ident">futures_core</span>::<span class="ident">Stream</span>;
 <span class="kw">use</span> <span class="ident">tokio_tungstenite</span>::<span class="ident">tungstenite</span>::<span class="ident">Message</span>;
 
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">stream</span>::<span class="ident">rate_limits</span>::<span class="ident">RateLimitable</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">StringRef</span>;
-<span class="kw">use</span> <span class="ident">futures_core</span>::<span class="ident">Stream</span>;
 
 <span class="doccomment">/// Messages to be sent from the client to twitch servers</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>

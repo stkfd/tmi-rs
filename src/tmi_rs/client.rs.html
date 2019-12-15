@@ -221,6 +221,9 @@
 <span id="221">221</span>
 <span id="222">222</span>
 <span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
 </pre><div class="example-wrap"><pre class="rust ">
 <span class="doccomment">//! Client module, includes websocket connection handling, listener and handler registration</span>
 
@@ -268,12 +271,15 @@
     <span class="kw">pub</span> <span class="ident">cap_tags</span>: <span class="ident">bool</span>,
 
     <span class="doccomment">/// Receiver middlewares</span>
+    <span class="attribute">#[<span class="ident">builder</span>(<span class="ident">default</span> <span class="op">=</span> <span class="string">&quot;None&quot;</span>)]</span>
     <span class="kw">pub</span> <span class="ident">recv_middleware</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RecvMiddlewareConstructor</span><span class="op">&gt;</span>,
 
     <span class="doccomment">/// Send middlewares</span>
+    <span class="attribute">#[<span class="ident">builder</span>(<span class="ident">default</span> <span class="op">=</span> <span class="string">&quot;None&quot;</span>)]</span>
     <span class="kw">pub</span> <span class="ident">send_middleware</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">SendMiddlewareConstructor</span><span class="op">&gt;</span>,
 
     <span class="doccomment">/// Rate limiting configuration</span>
+    <span class="attribute">#[<span class="ident">builder</span>(<span class="ident">default</span> <span class="op">=</span> <span class="string">&quot;RateLimiterConfig::default()&quot;</span>)]</span>
     <span class="kw">pub</span> <span class="ident">rate_limiter</span>: <span class="ident">RateLimiterConfig</span>,
 }
 
