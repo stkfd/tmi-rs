@@ -44,9 +44,11 @@ pub struct TwitchClientConfig {
     pub cap_tags: bool,
 
     /// Receiver middlewares
+    #[builder(default = "None")]
     pub recv_middleware: Option<RecvMiddlewareConstructor>,
 
     /// Send middlewares
+    #[builder(default = "None")]
     pub send_middleware: Option<SendMiddlewareConstructor>,
 
     /// Rate limiting configuration
