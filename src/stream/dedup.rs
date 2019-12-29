@@ -89,7 +89,7 @@ where
             channel.to_string(),
             MessageRecord {
                 sent_at: instant,
-                message: msg.to_string(),
+                message: (*msg).to_string(),
             },
         );
     }
