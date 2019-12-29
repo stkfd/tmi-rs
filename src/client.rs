@@ -144,7 +144,7 @@ impl TwitchClient {
 
             let messages = mapped_client_recv
                 .rate_limited(200, &rate_limiter)
-                .map(|msg| Message::from(msg.to_string()));
+                .map(|msg| -> Message { msg.into() });
             messages.map(Ok).forward(&mut ws_sink).await.unwrap();
         });
 

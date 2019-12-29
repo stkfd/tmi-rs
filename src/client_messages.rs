@@ -22,6 +22,7 @@ pub enum ClientMessage<T: StringRef> {
     CapRequest(Vec<Capability>),
     Ping,
     Pong,
+    Close,
 }
 
 impl ClientMessage<String> {
@@ -274,42 +275,36 @@ impl ClientMessage<String> {
     }
 }
 
-impl<T: StringRef> fmt::Display for ClientMessage<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl<T: StringRef> Into<Message> for &ClientMessage<T> {
+    fn into(self) -> Message {
         match self {
             ClientMessage::PrivMsg { channel, message } => {
-                write!(f, "PRIVMSG {} :{}", channel, message)
+                Message::Text(format!("PRIVMSG {} :{}", channel, message))
             }
             ClientMessage::Whisper { recipient, message } => {
-                write!(f, "PRIVMSG jtv :/w {} {}", recipient, message)
+                Message::Text(format!("PRIVMSG jtv :/w {} {}", recipient, message))
             }
-            ClientMessage::Join(channel) => write!(f, "JOIN {}", channel),
-            ClientMessage::Part(channel) => write!(f, "PART {}", channel),
-            ClientMessage::CapRequest(caps) => write!(
-                f,
+            ClientMessage::Join(channel) => Message::Text(format!("JOIN {}", channel)),
+            ClientMessage::Part(channel) => Message::Text(format!("PART {}", channel)),
+            ClientMessage::CapRequest(caps) => Message::Text(format!(
                 "CAP REQ :{}",
                 caps.iter()
                     .map(|cap| -> &str { cap.into() })
                     .collect::<Vec<_>>()
                     .join(" ")
-            ),
-            ClientMessage::Nick(nick) => write!(f, "NICK {}", nick),
-            ClientMessage::Pass(pass) => write!(f, "PASS {}", pass),
-            ClientMessage::Ping => write!(f, "PING"),
-            ClientMessage::Pong => write!(f, "PONG"),
+            )),
+            ClientMessage::Nick(nick) => Message::Text(format!("NICK {}", nick)),
+            ClientMessage::Pass(pass) => Message::Text(format!("PASS {}", pass)),
+            ClientMessage::Ping => Message::Text("PING".to_string()),
+            ClientMessage::Pong => Message::Text("PONG".to_string()),
+            ClientMessage::Close => Message::Close(None),
         }
-    }
-}
-
-impl<T: StringRef> Into<Message> for &ClientMessage<T> {
-    fn into(self) -> Message {
-        Message::Text(self.to_string())
     }
 }
 
 impl<T: StringRef> Into<Message> for ClientMessage<T> {
     fn into(self) -> Message {
-        Message::Text(self.to_string())
+        (&self).into()
     }
 }
 

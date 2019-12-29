@@ -31,7 +31,7 @@ where
 
     fn start_send(self: Pin<&mut Self>, item: M) -> Result<(), Self::Error> {
         let msg: ClientMessage<String> = item.into();
-        debug!("> {}", msg);
+        debug!("> {:?}", msg);
         <&Si>::start_send(Pin::new(&mut &self.sink), msg).map_err(|_| Error::SendError)
     }
 
