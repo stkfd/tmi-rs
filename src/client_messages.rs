@@ -3,7 +3,7 @@
 use std::borrow::Borrow;
 use std::fmt;
 
-use futures_core::Stream;
+use smallvec::SmallVec;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::stream::rate_limits::RateLimitable;
@@ -19,7 +19,7 @@ pub enum ClientMessage<T: StringRef> {
     Part(T),
     Nick(T),
     Pass(T),
-    CapRequest(Vec<Capability>),
+    CapRequest(SmallVec<[Capability; 3]>),
     Ping,
     Pong,
     Close,
@@ -45,11 +45,11 @@ impl ClientMessage<String> {
     /// Authenticates the user. Caution: this is normally called automatically when calling
     /// [`TwitchClient::connect`](tmi_rs::TwitchClient::connect), only use it if this stream was created in some other
     /// way.
-    pub fn login<S: Into<String> + Borrow<str>>(username: S, token: S) -> impl Stream<Item = Self> {
-        futures_util::stream::iter(vec![
+    pub fn login<S: Into<String> + Borrow<str>>(username: S, token: S) -> SmallVec<[Self; 2]> {
+        smallvec!(
             ClientMessage::Pass(token.into()),
             ClientMessage::Nick(username.into()),
-        ])
+        )
     }
 
     /// Permanently ban a user

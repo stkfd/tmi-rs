@@ -200,9 +200,6 @@ fn parse(msg_result: Result<Message, WsError>) -> EventBuffer {
                 SmallVec::new()
             }
         },
-        Err(e) => smallvec::smallvec![Err(Error::WebsocketError {
-            details: "Error receiving messages from the websocket connection".into(),
-            source: e,
-        })],
+        Err(e) => smallvec::smallvec![Err(e.into())],
     }
 }

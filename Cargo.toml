@@ -10,6 +10,7 @@ edition = "2018"
 license = "MPL-2.0"
 
 [dependencies]
+thiserror = "1.0.9"
 log = "0.4.8"
 fnv = "1.0.6"
 derive_builder = "0.9.0"
@@ -17,19 +18,18 @@ derive_more = "0.99.1"
 futures-core = "0.3"
 futures-sink = "0.3"
 futures-util = "0.3"
-futures-channel = { version = "0.3", features = ["sink"] }
 pin-utils = "0.1.0-alpha.4"
-tokio-tungstenite = { git = "https://github.com/dbcfd/tokio-tungstenite.git", rev = "ed8879878f8d1", features=["connect", "tls"] }
+tokio-tungstenite = { git = "https://github.com/snapview/tokio-tungstenite.git", branch = "master", features=["connect", "tls"] }
 tokio-tls = "0.3.0"
 url = "2.1.0"
 nom = "5.0.1"
 smallvec = "1.0.0"
-future-bus = "0.2.0"
 parking_lot = "0.9.0"
+async-stream = "0.2.0"
 
 [dependencies.tokio]
-version = "0.2"
-features = ["sync", "rt-core", "net", "time", "signal"]
+version = "0.2.9"
+features = ["sync", "rt-core", "net", "time", "signal", "stream"]
 
 [lib]
 name = "tmi_rs"
@@ -42,5 +42,5 @@ futures-test = "0.3.1"
 async-stream = "0.2.0"
 
 [dev-dependencies.tokio]
-version = "0.2"
+version = "0.2.9"
 features = ["sync", "rt-core", "net", "time", "test-util", "macros", "signal"]

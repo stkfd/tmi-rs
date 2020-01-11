@@ -258,18 +258,18 @@ pub struct RateLimiter {
     default_buckets: Vec<&'static str>,
 }
 
-impl From<RateLimiterConfig> for RateLimiter {
-    fn from(cfg: RateLimiterConfig) -> Self {
+impl From<&RateLimiterConfig> for RateLimiter {
+    fn from(cfg: &RateLimiterConfig) -> Self {
         RateLimiter {
             buckets: RwLock::new(
                 cfg.buckets
-                    .into_iter()
-                    .map(|(key, cfg)| (key, RateLimitBucket::from(cfg)))
+                    .iter()
+                    .map(|(&key, cfg)| (key, RateLimitBucket::from(cfg)))
                     .collect(),
             ),
             limits_map: Default::default(),
             default_slow: cfg.default_slow,
-            default_buckets: cfg.default_buckets,
+            default_buckets: cfg.default_buckets.clone(),
         }
     }
 }
@@ -481,11 +481,11 @@ impl RateLimitBucketConfig {
     }
 }
 
-impl From<RateLimitBucketConfig> for RateLimitBucket {
-    fn from(cfg: RateLimitBucketConfig) -> Self {
+impl From<&RateLimitBucketConfig> for RateLimitBucket {
+    fn from(cfg: &RateLimitBucketConfig) -> Self {
         let cap = cfg.capacity;
         RateLimitBucket {
-            cfg,
+            cfg: cfg.clone(),
             refill_queue: RwLock::new(VecDeque::with_capacity(cap)),
             counter: Mutex::new(cap),
         }
@@ -556,7 +556,7 @@ mod test {
     async fn test_default_slowmode() {
         let cx = &mut noop_context();
         pause();
-        let rate_limiter = Arc::new(RateLimiterConfig::default().into());
+        let rate_limiter = Arc::new((&RateLimiterConfig::default()).into());
         let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
         let mut stream =
             iter(vec![a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
@@ -619,7 +619,7 @@ mod test {
         let cx = &mut noop_context();
         pause();
         let mut b: &RateLimitBucket =
-            &RateLimitBucketConfig::new(10, Duration::from_secs(10)).into();
+            &(&RateLimitBucketConfig::new(10, Duration::from_secs(10))).into();
         for _ in 0..20 {
             assert_ready!(b.poll_next_unpin(cx));
             advance(Duration::from_secs(2)).await;

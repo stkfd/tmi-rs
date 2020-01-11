@@ -4,7 +4,6 @@ use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use futures_channel::mpsc;
 use futures_core::Stream;
 
 use dedup::*;
@@ -15,6 +14,7 @@ use crate::stream::split_oversize::SplitOversize;
 use crate::{ClientMessage, Error};
 
 pub mod dedup;
+pub(crate) mod internals;
 pub mod rate_limits;
 pub mod split_oversize;
 
@@ -75,7 +75,9 @@ impl<T: Stream<Item = ClientMessage<String>> + Unpin + Send> ClientMessageStream
 
 /// Setup function for message sender middleware
 pub type SendMiddlewareConstructor = Arc<
-    dyn Fn(mpsc::UnboundedReceiver<ClientMessage<String>>) -> Pin<Box<dyn ClientMessageStream>>
+    dyn Fn(
+            tokio::sync::mpsc::UnboundedReceiver<ClientMessage<String>>,
+        ) -> Pin<Box<dyn ClientMessageStream>>
         + Send
         + Sync
         + 'static,
