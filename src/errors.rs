@@ -5,13 +5,11 @@ use std::fmt::Debug;
 
 use crate::event::Event;
 use crate::irc::IrcMessage;
+use crate::ClientMessage;
 
 /// Error type for tmi-rs methods
 #[derive(Debug, Error)]
 pub enum Error {
-    /// Message sending error
-    #[error("Message send error")]
-    SendError,
     /// Websocket error
     #[error("Websocket error: {0}")]
     WebsocketError(#[from] tokio_tungstenite::tungstenite::Error),
@@ -34,7 +32,9 @@ pub enum Error {
     },
     /// Send error in an internal message passing channel
     #[error("Internal message channel was unexpectedly closed.")]
-    MessageChannelError,
+    MessageSendError(
+        #[from] tokio::sync::mpsc::error::SendError<ClientMessage<std::string::String>>,
+    ),
     /// IRC parsing error
     #[error("IRC parse error:\n{0}")]
     IrcParseError(String),

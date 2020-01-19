@@ -7,54 +7,68 @@
 //!
 //! use std::env;
 //! use std::error::Error;
+//! use std::sync::Arc;
 //!
-//! use futures::future::{join, ready};
-//! use futures::stream::StreamExt;
-//! use futures::sink::SinkExt;
+//! use futures::stream::{StreamExt, TryStreamExt};
 //!
-//! use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
 //! use tmi_rs::client_messages::ClientMessage;
 //! use tmi_rs::event::*;
+//! use tmi_rs::selectors::priv_msg;
+//! use tmi_rs::{TwitchClient, TwitchClientConfig, TwitchClientConfigBuilder};
 //!
+//! /// To run this example, the TWITCH_CHANNEL, TWITCH_USERNAME and TWITCH_AUTH environment variables
+//! /// need to be set.
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn Error>> {
 //!     env_logger::init();
 //!     let channel = env::var("TWITCH_CHANNEL")?;
-//!     let client: TwitchClient = TwitchClientConfigBuilder::default()
-//!         .username(env::var("TWITCH_USERNAME")?)
-//!         .token(env::var("TWITCH_AUTH")?)
-//!         .build()? // build config
-//!         .into(); // build client from config
+//!     let config: Arc<TwitchClientConfig> = Arc::new(
+//!         TwitchClientConfigBuilder::default()
+//!             .username(env::var("TWITCH_USERNAME")?)
+//!             .token(env::var("TWITCH_AUTH")?)
+//!             .build()?,
+//!     );
+//!     let client = TwitchClient::new(&config);
 //!
-//!     let TwitchChatConnection { mut sender, receiver, error_receiver } = client.connect().await?;
+//!     let (sender, receiver) = client.connect().await?;
 //!
 //!     // join a channel
-//!     (&sender).send(ClientMessage::join(channel.clone())).await?;
+//!     sender.send(ClientMessage::join(channel.clone()))?;
 //!
 //!     // process messages and do stuff with the data
-//!     let process_messages = async {
-//!         let send_result = receiver.filter_map(
-//!             |event| {
-//!                 info!("{:?}", &event);
-//!                 ready(match &*event {
-//!                     Event::PrivMsg(event_data) if event_data.message().starts_with("!hello") => {
-//!                         // return response message to the stream
-//!                         Some(ClientMessage::message(event_data.channel().to_owned(), "Hello World!"))
+//!     receiver
+//!         .filter_map(|event| {
+//!             async move {
+//!                 match event {
+//!                     Ok(event) => Some(event),
+//!                     Err(error) => {
+//!                         error!("Connection error: {}", error);
+//!                         None
 //!                     }
-//!                     _ => None
-//!                 })
-//!             })
-//!             .map(Ok)
-//!             .forward(&sender).await;
-//!
-//!         if let Err(e) = send_result { error!("{}", e); }
-//!     };
-//!
-//!     // log any connection errors
-//!     let process_errors = error_receiver.for_each(|error| async move {
-//!         error!("Connection error: {}", error);
-//!     });
-//!     join(process_messages, process_errors).await;
+//!                 }
+//!             }
+//!         })
+//!         .filter_map(priv_msg) // filter only privmsg events
+//!         .map(Ok)
+//!         .try_for_each(|event_data| {
+//!             // explicit binding of the reference is needed so the `async move` closure does not
+//!             // move the sender itself
+//!             let sender = &sender;
+//!             async move {
+//!                 info!("{:?}", event_data);
+//!                 if event_data.message().starts_with("!hello") {
+//!                     // return response message to the stream
+//!                     sender.send(ClientMessage::message(
+//!                         event_data.channel().to_owned(),
+//!                         "Hello World!",
+//!                     ))?;
+//!                 }
+//!                 // type hint is required because there is no other way to specify the type of the error
+//!                 // returned by the async block
+//!                 Ok::<_, Box<dyn Error>>(())
+//!             }
+//!         })
+//!         .await?;
 //!     Ok(())
 //! }
 //! ```

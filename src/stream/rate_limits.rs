@@ -581,7 +581,7 @@ mod test {
     async fn test_change_limits() {
         let cx = &mut noop_context();
         pause();
-        let rate_limiter = Arc::new(RateLimiterConfig::default().into());
+        let rate_limiter = Arc::new((&RateLimiterConfig::default()).into());
         let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
         let mut stream =
             iter(vec![a.clone(), a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
@@ -603,7 +603,7 @@ mod test {
         let cx = &mut noop_context();
         pause();
         let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
-        let rate_limiter = Arc::new(RateLimiterConfig::default().into());
+        let rate_limiter = Arc::new((&RateLimiterConfig::default()).into());
         let mut stream = iter(vec![a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
         rate_limiter.set_slow_mode("#channel", SlowModeLimit::Channel(10));
         assert_ready!(stream.poll_next_unpin(cx));
@@ -631,7 +631,7 @@ mod test {
         let cx = &mut noop_context();
         pause();
         let mut b: &RateLimitBucket =
-            &RateLimitBucketConfig::new(2, Duration::from_secs(10)).into();
+            &(&RateLimitBucketConfig::new(2, Duration::from_secs(10))).into();
         assert_ready!(b.poll_next_unpin(cx));
 
         advance(Duration::from_secs(3)).await;

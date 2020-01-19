@@ -4,16 +4,19 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use derive_builder::Builder;
-use futures_core::Stream;
-use futures_util::{SinkExt, StreamExt};
+use futures_core::{FusedFuture, Stream};
+use futures_util::future::FutureExt;
+use futures_util::{select, StreamExt, TryStreamExt};
 use smallvec::SmallVec;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot, watch};
+use tokio::time::{delay_for, delay_until, Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
 use crate::client_messages::{Capability, ClientMessage};
+use crate::event::tags::*;
+use crate::event::*;
 use crate::event::{Event, TwitchChatStream};
-use crate::stream::internals::InternalStreamExt;
 use crate::stream::rate_limits::{RateLimiter, RateLimiterConfig};
 use crate::stream::{
     EventStream, RecvMiddlewareConstructor, SendMiddlewareConstructor, SendStreamExt,
@@ -57,204 +60,289 @@ pub struct TwitchClientConfig {
     /// Rate limiting configuration
     #[builder(default = "RateLimiterConfig::default()")]
     pub rate_limiter: RateLimiterConfig,
+
+    /// Maximum number of retries to reconnect to Twitch
+    #[builder(default = "20")]
+    pub max_reconnects: u32,
+
+    /// Buffer size
+    #[builder(default = "20")]
+    pub channel_buffer: usize,
 }
 
-/// Represents a twitch chat client/connection. Call `connect` to establish a connection.
-pub struct TwitchClient {
-    cfg: Arc<TwitchClientConfig>,
-    rate_limiter: Arc<RateLimiter>,
-}
-
-impl TwitchClient {
-    /// Initialize a Twitch chat client
-    pub fn new(cfg: &Arc<TwitchClientConfig>, rate_limiter: &Arc<RateLimiter>) -> TwitchClient {
-        TwitchClient {
-            cfg: cfg.clone(),
-            rate_limiter: rate_limiter.clone(),
-        }
-    }
-
-    /// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
-    /// to block until the connection is closed.
-    pub async fn connect(
-        &self,
-    ) -> Result<
-        (
-            mpsc::UnboundedSender<ClientMessage<String>>,
-            impl Stream<Item = Result<Event<String>, Error>>,
-        ),
-        Error,
-    > {
-        debug!("Connecting to {}", self.cfg.url);
-
-        // create the websocket connection
-        let (ws, _) = connect_async(self.cfg.url.clone()).await?;
-
-        // wrap with IRC/Twitch logic
-        let (mut chat_sink, chat_recv) = TwitchChatStream::new(ws).split::<Message>();
-        let (sender, sender_stream) = mpsc::unbounded_channel();
-
-        let chat_recv = chat_recv
-            .handle_pings(sender.clone())
-            .auto_rate_limit(self.rate_limiter.clone());
-
-        let mut sender_stream = if let Some(ctor) = &self.cfg.send_middleware {
-            ctor(sender_stream)
-        } else {
-            Box::pin(sender_stream)
-        }
-        .rate_limited(200, &self.rate_limiter)
-        .map(|msg| -> Message { msg.into() });
-
-        // apply receiver middleware
-        let chat_recv: Pin<Box<dyn EventStream>> = if let Some(ctor) = &self.cfg.recv_middleware {
-            ctor(Box::new(chat_recv))
-        } else {
-            Box::pin(chat_recv)
-        };
-
-        tokio::spawn(async move {
-            while let Some(message) = sender_stream.next().await {
-                chat_sink.send(message).await?;
-            }
-            Ok::<(), Error>(())
-        });
-
-        // send capability requests on connect
-        let capabilities = self.get_capabilities();
-        sender
-            .send(ClientMessage::<String>::CapRequest(capabilities))
-            .map_err(|_| Error::MessageChannelError)?;
-        for msg in
-            ClientMessage::login(self.cfg.username.clone(), self.cfg.token.clone()).into_iter()
-        {
-            sender.send(msg).map_err(|_| Error::MessageChannelError)?
-        }
-
-        Ok((sender, chat_recv))
-    }
-
-    /// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
-    /// to block until the connection is closed.
-    /*pub async fn connect(&self) -> Result<TwitchChatConnection, Error> {
-        debug!("Connecting to {}", self.cfg.url);
-
-        // create the underlying websocket connection
-        let (ws, _) = connect_async(self.cfg.url.clone()).await.map_err(|e| {
-            error!("Connection to {} failed", self.cfg.url);
-            Error::WebsocketError {
-                details: Cow::from("Failed to connect to the chat server"),
-                source: e,
-            }
-        })?;
-
-        // wrap websocket to convert websocket messages into and from Twitch events
-        let (mut ws_sink, ws_recv) = TwitchChatStream::new(ws).split::<Message>();
-
-        let mut message_bus = ::future_bus::bounded::<SharedEvent>(200);
-        let mut error_bus = ::future_bus::bounded::<Arc<Error>>(200);
-        let message_receiver = message_bus.subscribe();
-        let error_receiver = error_bus.subscribe();
-        let (client_sender, client_recv) = mpsc::unbounded::<ClientMessage<String>>();
-        let sender = TwitchChatSender::new(client_sender);
-
-        // receive messages from websocket and forward to broadcast channel
-        let recv_middleware_ctor = self.cfg.recv_middleware.clone();
-        tokio::spawn(async move {
-            // apply receive middleware
-            let mut mapped_ws_recv = if let Some(ctor) = recv_middleware_ctor {
-                ctor(Box::new(ws_recv))
-            } else {
-                Box::pin(ws_recv)
-            };
-
-            while let Some(result) = mapped_ws_recv.next().await {
-                let send_result = match result {
-                    Ok(event) => message_bus.send(Arc::new(event)).await,
-                    Err(err) => error_bus.send(Arc::new(err)).await,
-                };
-                if let Err(err) = send_result {
-                    error!("Internal channel error. Couldn't pass message. {}", err);
-                }
-            }
-        });
-
-        // apply rate limiting to sent messages and forward them to the websocket sink
-        let rate_limiter = self.rate_limiter.clone();
-        let send_middleware_ctor = self.cfg.send_middleware.clone();
-        tokio::spawn(async move {
-            // apply send middleware
-            let mapped_client_recv = if let Some(ctor) = send_middleware_ctor {
-                ctor(client_recv)
-            } else {
-                Box::pin(client_recv)
-            };
-
-            let messages = mapped_client_recv
-                .rate_limited(200, &rate_limiter)
-                .map(|msg| -> Message { msg.into() });
-            messages.map(Ok).forward(&mut ws_sink).await.unwrap();
-        });
-
-        // do any internal message handling like rate limit detection and ping pong
-        let internal_receiver = message_receiver.try_clone().expect("Get internal receiver");
-        let internal_sender = sender.clone();
-        let rate_limiter = self.rate_limiter.clone();
-        tokio::spawn(async move {
-            let responses = internal_receiver.filter_map(|e: SharedEvent| {
-                ready(match *e {
-                    Event::Ping(_) => Some(ClientMessage::<String>::Pong),
-                    Event::UserState(ref event) => {
-                        let badges = event.badges().unwrap();
-                        let is_mod = badges.into_iter().any(|badge| {
-                            ["moderator", "broadcaster", "vip"].contains(&badge.badge)
-                        });
-                        rate_limiter.update_mod_status(event.channel(), is_mod);
-                        None
-                    }
-                    _ => None,
-                })
-            });
-
-            responses.map(Ok).forward(&internal_sender).await.unwrap();
-        });
-
-        // send capability requests on connect
-        let capabilities = self.get_capabilities();
-        (&sender)
-            .send(ClientMessage::<String>::CapRequest(capabilities))
-            .await?;
-        (&sender)
-            .send_all(
-                &mut ClientMessage::login(self.cfg.username.clone(), self.cfg.token.clone())
-                    .map(Ok),
-            )
-            .await?;
-
-        Ok(TwitchChatConnection {
-            receiver: message_receiver,
-            error_receiver,
-            sender: sender.clone(),
-        })
-    }*/
-
-    /// Get the rate limiter used for this client, can be used to change the rate limiting configuration
-    /// at runtime.
-    pub fn rate_limiter(&self) -> &Arc<RateLimiter> {
-        &self.rate_limiter
-    }
-
+impl TwitchClientConfig {
     fn get_capabilities(&self) -> SmallVec<[Capability; 3]> {
         let mut capabilities = SmallVec::new();
-        if self.cfg.cap_commands {
+        if self.cap_commands {
             capabilities.push(Capability::Commands)
         }
-        if self.cfg.cap_tags {
+        if self.cap_tags {
             capabilities.push(Capability::Tags)
         }
-        if self.cfg.cap_membership {
+        if self.cap_membership {
             capabilities.push(Capability::Membership)
         }
         capabilities
     }
 }
+
+/// Represents a twitch chat client/connection. Call `connect` to establish a connection.
+pub struct TwitchClient<St> {
+    channels: Vec<String>,
+    connecting_state: watch::Receiver<bool>,
+    sender: MessageSender,
+    stream: St,
+}
+
+type TimeoutReceiver = oneshot::Receiver<()>;
+type MessageSender = mpsc::Sender<ClientMessage<String>>;
+
+const RECONNECT_DELAY: Duration = Duration::from_secs(5);
+
+/// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
+/// to block until the connection is closed.
+pub async fn connect(
+    cfg: &Arc<TwitchClientConfig>,
+    rate_limiter: &Arc<RateLimiter>,
+) -> Result<TwitchClient<impl EventStream>, Error> {
+    let (sender, sender_stream) = mpsc::channel(cfg.channel_buffer);
+    let (connecting_setter, mut connecting_receiver) = watch::channel::<bool>(true);
+    let (mut out_sender, out_stream) = mpsc::channel(cfg.channel_buffer);
+
+    let sender_stream = if let Some(ctor) = &cfg.send_middleware {
+        ctor(sender_stream)
+    } else {
+        Box::pin(sender_stream)
+    }
+    .rate_limited(50, &rate_limiter);
+
+    tokio::spawn({
+        let rate_limiter = rate_limiter.clone();
+        let cfg = cfg.clone();
+        let sender = sender.clone();
+        async move {
+            let mut sender_stream = sender_stream;
+            let mut should_reconnect = true;
+            let mut reconnect_counter = 0_u32;
+
+            while should_reconnect {
+                if reconnect_counter > 0 {
+                    if reconnect_counter < cfg.max_reconnects {
+                        info!("Reconnecting in {} seconds...", RECONNECT_DELAY.as_secs());
+                        delay_for(RECONNECT_DELAY).await;
+                    } else {
+                        error!("Maximum number of reconnect attempts reached, quitting.");
+                        break;
+                    }
+                }
+                reconnect_counter += 1;
+
+                if connecting_setter.broadcast(true).is_err() {
+                    break;
+                }
+                let (mut connection_future, incoming_stream) = if let Ok(result) =
+                    connect_raw(&cfg, sender.clone(), &mut sender_stream).await
+                {
+                    if connecting_setter.broadcast(false).is_err() {
+                        break;
+                    }
+                    result
+                } else {
+                    continue;
+                };
+
+                let (receiver, timeout_rx) =
+                    build_receiver(&rate_limiter, &cfg, &sender, incoming_stream);
+                let mut receiver = receiver.fuse();
+                let mut timeout_rx_mut = &mut timeout_rx.fuse();
+
+                #[allow(clippy::unnecessary_mut_passed)]
+                // prevent clippy warnings from inside select!
+                loop {
+                    select! {
+                        item = receiver.next() => {
+                            if let Some(item) = item {
+                                if let Err(Error::WebsocketError(tokio_tungstenite::tungstenite::Error::Io(io_err))) = item {
+                                    warn!("IO error in websocket, reconnecting: {}", io_err);
+                                    break;
+                                }
+
+                                if out_sender.send(item).await.is_err() {
+                                    info!(
+                                        "Chat consumer dropped receiver stream, ending connection"
+                                    );
+                                    should_reconnect = false;
+                                    break;
+                                }
+                            } else {
+                                debug!("Connection closed normally");
+                                should_reconnect = false;
+                                break;
+                            }
+                        },
+                        timeout = timeout_rx_mut => {
+                            warn!("Twitch didn't respond to PING in time, closing connection.");
+                            break;
+                        },
+                        msg_forward = connection_future => {}
+                    }
+                }
+            }
+
+            Ok::<_, Error>(())
+        }
+    });
+
+    while let Some(false) = connecting_receiver.next().await {}
+
+    Ok(TwitchClient {
+        channels: vec![],
+        connecting_state: connecting_receiver,
+        sender,
+        stream: out_stream,
+    })
+}
+
+fn build_receiver(
+    rate_limiter: &Arc<RateLimiter>,
+    cfg: &Arc<TwitchClientConfig>,
+    sender: &MessageSender,
+    chat_receiver: impl EventStream + 'static,
+) -> (impl EventStream + 'static, TimeoutReceiver) {
+    let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(Instant::now());
+    let rate_limiter = rate_limiter.clone();
+
+    let with_internals = chat_receiver
+        .inspect_ok({
+            let sender = sender.clone();
+            move |event| {
+                if let Event::Ping(_) = event {
+                    let mut sender = sender.clone();
+                    tokio::spawn(async move {
+                        if sender.send(ClientMessage::<String>::Pong).await.is_err() {
+                            error!("Tried to respond to ping but the send channel was closed");
+                        }
+                    });
+                }
+            }
+        })
+        .inspect_ok({
+            move |event| {
+                if let Event::UserState(ref event) = event {
+                    let badges = event.badges().unwrap();
+                    let is_mod = badges
+                        .into_iter()
+                        .any(|badge| ["moderator", "broadcaster", "vip"].contains(&badge.badge));
+                    rate_limiter.update_mod_status(event.channel(), is_mod);
+                }
+            }
+        })
+        .inspect_ok(move |event| {
+            if let Event::Pong(_) = event {
+                if heartbeat_tx.broadcast(Instant::now()).is_err() {
+                    error!("heartbeat channel closed!");
+                }
+            }
+        });
+
+    // apply receiver middleware
+    let with_middleware: Pin<Box<dyn EventStream>> = if let Some(ctor) = &cfg.recv_middleware {
+        ctor(Box::new(with_internals))
+    } else {
+        Box::pin(with_internals)
+    };
+
+    let timeout_rx = spawn_heartbeat(sender, heartbeat_rx);
+
+    (with_middleware, timeout_rx)
+}
+
+fn spawn_heartbeat(
+    sender: &MessageSender,
+    heartbeat_rx: watch::Receiver<Instant>,
+) -> TimeoutReceiver {
+    const HEARTBEAT_DURATION: Duration = Duration::from_secs(20);
+    let (timeout_tx, timeout_rx) = oneshot::channel();
+    let mut sender = sender.clone();
+
+    tokio::spawn(async move {
+        loop {
+            sender.send(ClientMessage::<String>::Ping).await?;
+            let sent_at = Instant::now();
+            delay_until(sent_at + HEARTBEAT_DURATION).await;
+            if *heartbeat_rx.borrow() < sent_at {
+                error!(
+                    "Connection timed out, waited {} seconds for PONG",
+                    HEARTBEAT_DURATION.as_secs()
+                );
+                if timeout_tx.send(()).is_err() {
+                    warn!("Timeout signal was not processed, the connection will silently fail.")
+                }
+                break;
+            }
+        }
+        Ok::<_, Error>(())
+    });
+    timeout_rx
+}
+
+/// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
+/// to block until the connection is closed.
+pub async fn connect_raw<'a>(
+    cfg: &Arc<TwitchClientConfig>,
+    mut sender: MessageSender,
+    sender_stream: &'a mut (impl Stream<Item = ClientMessage<String>> + Unpin),
+) -> Result<
+    (
+        impl FusedFuture<Output = ()> + Unpin + 'a,
+        impl EventStream + 'static,
+    ),
+    Error,
+> {
+    debug!("Connecting to {}", cfg.url);
+    // create the websocket connection
+    let (ws, _) = connect_async(cfg.url.clone()).await?;
+
+    // wrap with IRC/Twitch logic
+    let (chat_sink, chat_receiver) = TwitchChatStream::new(ws).split::<Message>();
+
+    let task = sender_stream
+        .map(|item| Ok(item.into()))
+        .forward(chat_sink)
+        .map(|_| ());
+
+    // send capability requests on connect
+    let capabilities = cfg.get_capabilities();
+    sender
+        .send(ClientMessage::<String>::CapRequest(capabilities))
+        .await?;
+    for msg in ClientMessage::login(cfg.username.clone(), cfg.token.clone()).into_iter() {
+        sender.send(msg).await?
+    }
+
+    Ok((task, chat_receiver))
+}
+
+impl<St> TwitchClient<St> {
+    /// Get a mutable reference to the message send channel
+    pub fn sender_mut(&mut self) -> &mut MessageSender {
+        &mut self.sender
+    }
+
+    /// Get an owned message sender
+    pub fn sender_cloned(&self) -> MessageSender {
+        self.sender.clone()
+    }
+
+    /// Get a mutable reference to the stream of chat events
+    pub fn stream_mut(&mut self) -> &mut St {
+        &mut self.stream
+    }
+}
+
+/*async fn backoff_delay(retry_count: u64) {
+    delay_for(Duration::from_secs_f64(
+        min(2 << retry_count, 60) as f64 + rand::thread_rng().gen::<f64>(),
+    ))
+    .await;
+}*/
