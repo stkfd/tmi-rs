@@ -88,9 +88,13 @@ impl TwitchClientConfig {
 
 /// Represents a twitch chat client/connection. Call `connect` to establish a connection.
 pub struct TwitchClient<St> {
+    /// Channels that this client is supposed to be joining
     channels: Vec<String>,
+    /// whether the client is currently (re-)connecting, to avoid losing queued messages during reconnections
     connecting_state: watch::Receiver<bool>,
+    /// message sender for client messages
     sender: MessageSender,
+    /// stream of chat events
     stream: St,
 }
 
