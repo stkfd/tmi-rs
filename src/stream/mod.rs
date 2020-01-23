@@ -12,6 +12,7 @@ use rate_limits::*;
 use crate::event::Event;
 use crate::stream::split_oversize::SplitOversize;
 use crate::{ClientMessage, Error};
+use std::borrow::Borrow;
 
 pub mod dedup;
 pub mod rate_limits;
@@ -24,11 +25,11 @@ pub trait SendStreamExt: Stream<Item = ClientMessage<String>> {
     /// Composes a fixed size buffered rate limiter in front of this sink. Messages passed into
     /// the sink are treated according to their implementations of [`RateLimitable`](rate_limits/trait.RateLimitable.html).
     /// Messages that report rate limiting applies are put into a buffer which is sent  
-    fn rate_limited(
+    fn rate_limited<Rl: Borrow<RateLimiter>>(
         self,
         capacity: usize,
-        rate_limiter: &Arc<RateLimiter>,
-    ) -> BufferedRateLimiter<Self, ClientMessage<String>>
+        rate_limiter: Rl,
+    ) -> BufferedRateLimiter<Self, ClientMessage<String>, Rl>
     where
         Self: Sized + Unpin,
     {
@@ -68,13 +69,13 @@ pub type RecvMiddlewareConstructor =
     Arc<dyn Fn(Box<dyn EventStream>) -> Pin<Box<dyn EventStream>> + Send + Sync + 'static>;
 
 /// Auto-implemented shortcut trait for any stream of `ClientMessage` objects
-pub trait ClientMessageStream: Stream<Item = ClientMessage<String>> + Unpin + Send {}
+pub trait ClientMessageStream: Stream<Item = ClientMessage> + Unpin + Send + Sync {}
 
-impl<T: Stream<Item = ClientMessage<String>> + Unpin + Send> ClientMessageStream for T {}
+impl<T: Stream<Item = ClientMessage> + Unpin + Send + Sync> ClientMessageStream for T {}
 
 /// Setup function for message sender middleware
 pub type SendMiddlewareConstructor = Arc<
-    dyn Fn(tokio::sync::mpsc::Receiver<ClientMessage<String>>) -> Pin<Box<dyn ClientMessageStream>>
+    dyn Fn(tokio::sync::mpsc::Receiver<ClientMessage>) -> Pin<Box<dyn ClientMessageStream>>
         + Send
         + Sync
         + 'static,

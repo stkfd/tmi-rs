@@ -12,7 +12,7 @@ use crate::StringRef;
 /// Messages to be sent from the client to twitch servers
 #[allow(missing_docs)]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ClientMessage<T: StringRef> {
+pub enum ClientMessage<T: StringRef = String> {
     PrivMsg { channel: T, message: T },
     Whisper { recipient: T, message: T },
     Join(T),

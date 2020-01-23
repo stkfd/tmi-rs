@@ -11,7 +11,6 @@ use pin_utils::pin_mut;
 use tmi_rs::client_messages::ClientMessage;
 use tmi_rs::event::*;
 use tmi_rs::selectors::priv_msg;
-use tmi_rs::stream::rate_limits::RateLimiter;
 use tmi_rs::{connect, TwitchClientConfig, TwitchClientConfigBuilder};
 
 /// To run this example, the TWITCH_CHANNEL, TWITCH_USERNAME and TWITCH_AUTH environment variables
@@ -26,7 +25,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .token(env::var("TWITCH_AUTH")?)
             .build()?,
     );
-    let mut client = connect(&config, &Arc::new(RateLimiter::from(&config.rate_limiter))).await?;
+    let mut client = connect(&config).await?;
     let mut sender = client.sender_cloned();
     let receiver = client.stream_mut();
 
