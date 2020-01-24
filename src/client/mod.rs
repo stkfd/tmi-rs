@@ -3,11 +3,14 @@
 use tokio::time::Duration;
 
 pub use config::*;
-pub use single::*;
 
 mod config;
-mod pool;
-mod raw;
-mod single;
+
+/// Managed connection pools
+pub mod pool;
+/// Create a raw connection with no extras
+pub mod raw;
+/// Single, "batteries included" connections
+pub mod single;
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(5);
