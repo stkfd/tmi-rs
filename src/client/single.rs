@@ -1,88 +1,79 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
+use futures_sink::Sink;
 use futures_util::future::FutureExt;
 use futures_util::{pin_mut, select, SinkExt, StreamExt, TryStreamExt};
+use tokio::pin;
 use tokio::sync::{mpsc, oneshot, watch, RwLock};
 use tokio::time::{delay_for, delay_until, Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
+use crate::client::{send_capabilities, MessageSender, TimeoutReceiver, TwitchClient};
 use crate::client_messages::ClientMessage;
 use crate::event::tags::*;
 use crate::event::*;
 use crate::event::{Event, TwitchChatStream};
 use crate::irc_constants::RPL_ENDOFMOTD;
 use crate::stream::rate_limits::RateLimiter;
-use crate::stream::{ClientMessageStream, EventStream, SendStreamExt};
+use crate::stream::{ClientMessageStream, EventStream, SendStreamExt, SentClientMessage};
+use crate::util::InternalSender;
 use crate::{Error, TwitchClientConfig};
-
-use super::RECONNECT_DELAY;
-
-/// Represents a twitch chat client/connection. Call `connect` to establish a connection.
-pub struct TwitchClient<St> {
-    /// message sender for client messages
-    sender: MessageSender,
-    /// stream of chat events
-    stream: St,
-}
-
-impl<St> TwitchClient<St> {
-    /// Get a mutable reference to the message send channel
-    pub fn sender_mut(&mut self) -> &mut MessageSender {
-        &mut self.sender
-    }
-
-    /// Get an owned message sender
-    pub fn sender_cloned(&self) -> MessageSender {
-        self.sender.clone()
-    }
-
-    /// Get a mutable reference to the stream of chat events
-    pub fn stream_mut(&mut self) -> &mut St {
-        &mut self.stream
-    }
-}
-
-type TimeoutReceiver = oneshot::Receiver<()>;
-type MessageSender = mpsc::Sender<ClientMessage<String>>;
 
 /// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
 /// to block until the connection is closed.
 pub async fn connect(
     cfg: &Arc<TwitchClientConfig>,
 ) -> Result<TwitchClient<impl EventStream>, Error> {
+    let (event_sender, event_stream) = mpsc::channel(cfg.channel_buffer);
+
+    let sender = connect_internal(
+        cfg,
+        Arc::new(RateLimiter::from(&cfg.rate_limiter)),
+        InternalSender(event_sender),
+    )
+    .await?;
+    Ok(TwitchClient {
+        sender,
+        stream: event_stream,
+    })
+}
+
+pub(crate) async fn connect_internal(
+    cfg: &Arc<TwitchClientConfig>,
+    rate_limiter: Arc<RateLimiter>,
+    event_sender: impl Sink<Result<Event, Error>> + Send + Sync + 'static,
+) -> Result<MessageSender, Error> {
     let (connected_setter, connected_state) = watch::channel(ConnectedState::Disconnected);
     let state = Arc::new(ConnectionContext {
         connected_state,
         connected_setter,
         connecting_lock: RwLock::new(()),
         joined_channels: RwLock::new(vec![]),
-        rate_limiter: Arc::new(RateLimiter::from(&cfg.rate_limiter)),
+        rate_limiter,
     });
 
-    let (sender, sender_stream) = mpsc::channel(cfg.channel_buffer);
-    let (mut out_sender, out_stream) = mpsc::channel(cfg.channel_buffer);
+    let (message_sender, message_stream) = mpsc::channel::<SentClientMessage>(cfg.channel_buffer);
 
-    let sender_stream = if let Some(ctor) = &cfg.send_middleware {
-        ctor(sender_stream)
-    } else {
-        Box::pin(sender_stream)
-    }
-    .rate_limited(50, state.rate_limiter.clone());
+    let mut message_stream =
+        message_stream.rate_limited(cfg.channel_buffer, state.rate_limiter.clone());
 
     tokio::spawn({
         let cfg = cfg.clone();
-        let mut sender = sender.clone();
-        let state = state.clone();
-        async move {
-            let mut sender_stream = sender_stream;
-            let mut reconnect_counter = 0_u32;
+        let mut message_sender = MessageSender::from(message_sender.clone());
+        let context = state.clone();
 
+        async move {
+            pin!(event_sender);
+            let mut reconnect_counter = 0_u32;
             loop {
                 if reconnect_counter > 0 {
                     if reconnect_counter < cfg.max_reconnects {
-                        info!("Reconnecting in {} seconds...", RECONNECT_DELAY.as_secs());
-                        delay_for(RECONNECT_DELAY).await;
+                        info!(
+                            "Reconnecting in {} seconds...",
+                            cfg.reconnect_delay.as_secs()
+                        );
+                        delay_for(cfg.reconnect_delay).await;
                     } else {
                         error!("Maximum number of reconnect attempts reached, quitting.");
                         break;
@@ -90,12 +81,12 @@ pub async fn connect(
                 }
                 reconnect_counter += 1;
 
-                match run(
-                    &state,
+                match inner_connect_task(
+                    &context,
                     &cfg,
-                    &mut out_sender,
-                    &mut sender,
-                    &mut sender_stream,
+                    Pin::new(&mut event_sender),
+                    &mut message_sender,
+                    &mut message_stream,
                 )
                 .await?
                 {
@@ -114,10 +105,7 @@ pub async fn connect(
     let mut connected_state = state.connected_state.clone();
     while connected_state.next().await != Some(ConnectedState::Active) {}
 
-    Ok(TwitchClient {
-        sender,
-        stream: out_stream,
-    })
+    Ok(MessageSender::from(message_sender))
 }
 
 enum DisconnectReason {
@@ -143,30 +131,19 @@ pub struct ConnectionContext {
     connected_setter: watch::Sender<ConnectedState>,
 }
 
-/// State of the connection
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConnectedState {
-    /// Not connected
-    Disconnected,
-    /// WebSocket connection established, but no IRC welcome message yet
-    Established,
-    /// Fully active connection
-    Active,
-}
-
-async fn run(
-    state: &Arc<ConnectionContext>,
+async fn inner_connect_task(
+    context: &Arc<ConnectionContext>,
     cfg: &TwitchClientConfig,
-    out_sender: &mut mpsc::Sender<Result<Event<String>, Error>>,
-    sender: &mut MessageSender,
-    sender_stream: &mut (impl ClientMessageStream + 'static),
+    mut event_sender: Pin<&mut impl Sink<Result<Event, Error>>>,
+    message_sender: &mut MessageSender,
+    message_stream: &mut (impl ClientMessageStream + 'static),
 ) -> Result<DisconnectReason, Error> {
     let (connection_future, incoming_stream) = {
-        state
+        context
             .connected_setter
             .broadcast(ConnectedState::Disconnected)
             .expect("set connecting state");
-        let _connecting_guard = state.connecting_lock.write();
+        let _connecting_guard = context.connecting_lock.write();
 
         debug!("Connecting to {}", cfg.url);
         // create the websocket connection
@@ -175,7 +152,7 @@ async fn run(
             Err(_) => return Ok(DisconnectReason::ConnectFailed),
         };
 
-        state
+        context
             .connected_setter
             .broadcast(ConnectedState::Established)
             .expect("set connecting state");
@@ -183,17 +160,17 @@ async fn run(
         // wrap with IRC/Twitch logic
         let (mut chat_sink, incoming_stream) = TwitchChatStream::new(ws).split::<Message>();
 
-        let mut decorated_sender_stream = sender_stream.map(|item| {
-            match &item {
+        let mut decorated_sender_stream = message_stream.map(|item| {
+            match &item.message {
                 ClientMessage::Join(channel) => {
-                    let conn_ctx = state.clone();
+                    let conn_ctx = context.clone();
                     let channel = channel.clone();
                     tokio::spawn(async move {
                         conn_ctx.joined_channels.write().await.push(channel);
                     });
                 }
                 ClientMessage::Part(channel) => {
-                    let conn_ctx = state.clone();
+                    let conn_ctx = context.clone();
                     let channel = channel.clone();
                     tokio::spawn(async move {
                         conn_ctx
@@ -209,9 +186,8 @@ async fn run(
         });
         let connection_future = async move {
             while let Some(msg) = decorated_sender_stream.next().await {
-                let _connecting_guard = state.connecting_lock.read().await;
-                dbg!(&msg);
-                chat_sink.send(msg.into()).await?;
+                let _connecting_guard = context.connecting_lock.read().await;
+                chat_sink.send(msg.message.into()).await?;
             }
             Ok::<(), Error>(())
         }
@@ -220,52 +196,73 @@ async fn run(
         (connection_future, incoming_stream)
     };
 
-    // send capability requests on connect
-    let capabilities = cfg.get_capabilities();
-    sender
-        .send(ClientMessage::<String>::CapRequest(capabilities))
-        .await?;
-    for msg in ClientMessage::login(cfg.username.clone(), cfg.token.clone()).into_iter() {
-        sender.send(msg).await?
+    send_capabilities(cfg, message_sender).await?;
+
+    for channel in context.joined_channels.read().await.clone() {
+        message_sender.send(ClientMessage::Join(channel)).await?;
     }
 
-    for channel in state.joined_channels.read().await.clone() {
-        sender.send(ClientMessage::Join(channel)).await?;
-    }
-
-    let (receiver, timeout_rx) = decorate_receiver(state, cfg, sender, incoming_stream);
-    let mut receiver = receiver.fuse();
-    let mut timeout_rx_mut = &mut timeout_rx.fuse();
+    let (event_receiver, timeout_receiver) =
+        decorate_receiver_with_internals(context, cfg, message_sender, incoming_stream);
+    let mut event_receiver = event_receiver.fuse();
 
     pin_mut!(connection_future);
 
-    #[allow(clippy::unnecessary_mut_passed)]
-    // prevent clippy warnings from inside select!
-    loop {
-        select! {
-            item = receiver.next() => {
-                if let Some(item) = item {
-                    if let Err(Error::WebsocketError(tokio_tungstenite::tungstenite::Error::Io(io_err))) = item {
-                        warn!("IO error in websocket, reconnecting: {}", io_err);
-                        return Ok(DisconnectReason::IoError);
-                    }
+    #[inline]
+    async fn handle_event(
+        item: Option<Result<Event, Error>>,
+        event_sender: &mut (impl Sink<Result<Event, Error>> + Unpin),
+    ) -> Option<Result<DisconnectReason, Error>> {
+        if let Some(item) = item {
+            if let Err(Error::WebsocketError(tokio_tungstenite::tungstenite::Error::Io(io_err))) =
+                item
+            {
+                warn!("IO error in websocket, reconnecting: {}", io_err);
+                return Some(Ok(DisconnectReason::IoError));
+            }
 
-                    if out_sender.send(item).await.is_err() {
-                        info!(
-                            "Chat consumer dropped receiver stream, ending connection"
-                        );
-                        return Ok(DisconnectReason::Canceled);
+            if event_sender.send(item).await.is_err() {
+                info!("Chat consumer dropped receiver stream, ending connection");
+                return Some(Ok(DisconnectReason::Canceled));
+            }
+        } else {
+            debug!("Connection closed normally");
+            return Some(Ok(DisconnectReason::Closed));
+        }
+        None
+    }
+
+    if let Some(timeout_receiver) = timeout_receiver {
+        let mut timeout_receiver = timeout_receiver.fuse();
+
+        #[allow(clippy::unnecessary_mut_passed)]
+        // prevent clippy warnings from inside select!
+        loop {
+            select! {
+                item = event_receiver.next() => {
+                    if let Some(handle_event_result) = handle_event(item, &mut event_sender).await {
+                        return handle_event_result;
                     }
-                } else {
-                    debug!("Connection closed normally");
-                    return Ok(DisconnectReason::Closed);
-                }
-            },
-            timeout = timeout_rx_mut => {
-                warn!("Twitch didn't respond to PING in time, closing connection.");
-                return Ok(DisconnectReason::Timeout);
-            },
-            msg_forward = connection_future => {}
+                },
+                timeout = timeout_receiver => {
+                    warn!("Twitch didn't respond to PING in time, closing connection.");
+                    return Ok(DisconnectReason::Timeout);
+                },
+                msg_forward = connection_future => {}
+            }
+        }
+    } else {
+        #[allow(clippy::unnecessary_mut_passed)]
+        // prevent clippy warnings from inside select!
+        loop {
+            select! {
+                item = event_receiver.next() => {
+                    if let Some(handle_event_result) = handle_event(item, &mut event_sender).await {
+                        return handle_event_result;
+                    }
+                },
+                msg_forward = connection_future => {}
+            }
         }
     }
 }
@@ -277,13 +274,20 @@ async fn run(
 /// * Sends a heartbeat PONG signal and returns a channel that is notified when the server does not
 ///   respond
 /// * Keeps track of joined channels
-fn decorate_receiver(
+fn decorate_receiver_with_internals(
     conn_ctx: &Arc<ConnectionContext>,
     cfg: &TwitchClientConfig,
     sender: &MessageSender,
     chat_receiver: impl EventStream + 'static,
-) -> (impl EventStream + 'static, TimeoutReceiver) {
-    let (heartbeat_tx, heartbeat_rx) = tokio::sync::watch::channel(Instant::now());
+) -> (impl EventStream + 'static, Option<TimeoutReceiver>) {
+    let (heartbeat_tx, timeout_rx) = if cfg.heartbeat {
+        let (heartbeat_tx, heartbeat_rx) = watch::channel(Instant::now());
+        let timeout_rx = spawn_heartbeat(sender, heartbeat_rx);
+        (Some(heartbeat_tx), Some(timeout_rx))
+    } else {
+        (None, None)
+    };
+
     let conn_ctx = conn_ctx.clone();
 
     let with_internals = chat_receiver.inspect_ok({
@@ -292,14 +296,15 @@ fn decorate_receiver(
             Event::Ping(_) => {
                 let mut sender = sender.clone();
                 tokio::spawn(async move {
-                    if sender.send(ClientMessage::<String>::Pong).await.is_err() {
+                    if sender.send(ClientMessage::Pong).await.is_err() {
                         error!("Tried to respond to ping but the send channel was closed");
                     }
                 });
             }
             Event::UserState(ref event) => {
-                let badges = event.badges().unwrap();
-                let is_mod = badges
+                let is_mod = event
+                    .badges()
+                    .unwrap()
                     .into_iter()
                     .any(|badge| ["moderator", "broadcaster", "vip"].contains(&badge.badge));
                 conn_ctx
@@ -307,8 +312,10 @@ fn decorate_receiver(
                     .update_mod_status(event.channel(), is_mod);
             }
             Event::Pong(_) => {
-                if heartbeat_tx.broadcast(Instant::now()).is_err() {
-                    error!("heartbeat channel closed!");
+                if let Some(ref heartbeat_tx) = heartbeat_tx {
+                    if heartbeat_tx.broadcast(Instant::now()).is_err() {
+                        error!("heartbeat channel closed!");
+                    }
                 }
             }
             Event::ConnectMessage(msg) if msg.command() == RPL_ENDOFMOTD => {
@@ -321,16 +328,7 @@ fn decorate_receiver(
         }
     });
 
-    // apply receiver middleware
-    let with_middleware: Pin<Box<dyn EventStream>> = if let Some(ctor) = &cfg.recv_middleware {
-        ctor(Box::new(with_internals))
-    } else {
-        Box::pin(with_internals)
-    };
-
-    let timeout_rx = spawn_heartbeat(sender, heartbeat_rx);
-
-    (with_middleware, timeout_rx)
+    (with_internals, timeout_rx)
 }
 
 fn spawn_heartbeat(
@@ -358,4 +356,15 @@ fn spawn_heartbeat(
         Ok::<_, Error>(())
     });
     timeout_rx
+}
+
+/// State of the connection
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectedState {
+    /// Not connected
+    Disconnected,
+    /// WebSocket connection established, but no IRC welcome message yet
+    Established,
+    /// Fully active connection
+    Active,
 }

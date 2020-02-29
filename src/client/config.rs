@@ -2,8 +2,9 @@ use derive_builder::Builder;
 use smallvec::SmallVec;
 
 use crate::stream::rate_limits::RateLimiterConfig;
-use crate::stream::{RecvMiddlewareConstructor, SendMiddlewareConstructor};
+use crate::stream::{RecvMiddleware, SendMiddleware};
 use crate::Capability;
+use tokio::time::Duration;
 use url::Url;
 
 /// Holds the configuration for a twitch chat client. Convert it to a `TwitchClient` and call
@@ -34,11 +35,11 @@ pub struct TwitchClientConfig {
 
     /// Receiver middlewares
     #[builder(default = "None", setter(strip_option))]
-    pub recv_middleware: Option<RecvMiddlewareConstructor>,
+    pub recv_middleware: Option<RecvMiddleware>,
 
     /// Send middlewares
     #[builder(default = "None", setter(strip_option))]
-    pub send_middleware: Option<SendMiddlewareConstructor>,
+    pub send_middleware: Option<SendMiddleware>,
 
     /// Rate limiting configuration
     #[builder(default = "RateLimiterConfig::default()")]
@@ -51,6 +52,14 @@ pub struct TwitchClientConfig {
     /// Buffer size
     #[builder(default = "20")]
     pub channel_buffer: usize,
+
+    /// Send regular PINGs to check the connection is alive
+    #[builder(default = "true")]
+    pub heartbeat: bool,
+
+    /// Delay until reconnect after loss of connection
+    #[builder(default = "Duration::from_secs(5)")]
+    pub reconnect_delay: Duration,
 }
 
 impl TwitchClientConfig {

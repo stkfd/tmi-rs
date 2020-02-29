@@ -11,7 +11,7 @@ use pin_utils::pin_mut;
 use tmi_rs::client_messages::ClientMessage;
 use tmi_rs::event::*;
 use tmi_rs::selectors::priv_msg;
-use tmi_rs::{connect, TwitchClientConfig, TwitchClientConfigBuilder};
+use tmi_rs::{single::connect, TwitchClientConfig, TwitchClientConfigBuilder};
 
 /// To run this example, the TWITCH_CHANNEL, TWITCH_USERNAME and TWITCH_AUTH environment variables
 /// need to be set.
@@ -35,14 +35,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // process messages and do stuff with the data
     let privmsg_stream = receiver
-        .filter_map(|event| {
-            async move {
-                match event {
-                    Ok(event) => Some(event),
-                    Err(error) => {
-                        error!("Connection error: {}", error);
-                        None
-                    }
+        .filter_map(|event| async move {
+            match event {
+                Ok(event) => Some(event),
+                Err(error) => {
+                    error!("Connection error: {}", error);
+                    None
                 }
             }
         })

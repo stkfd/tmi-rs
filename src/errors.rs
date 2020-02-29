@@ -1,10 +1,12 @@
 use thiserror::Error;
+use tokio::sync::{broadcast, mpsc};
 
 use std::borrow::Cow;
 use std::fmt::Debug;
 
 use crate::event::Event;
 use crate::irc::IrcMessage;
+use crate::stream::SentClientMessage;
 use crate::ClientMessage;
 
 /// Error type for tmi-rs methods
@@ -31,14 +33,58 @@ pub enum Error {
         event: Event<String>,
     },
     /// Send error in an internal message passing channel
-    #[error("Internal message channel was unexpectedly closed.")]
-    MessageSendError(
-        #[from] tokio::sync::mpsc::error::SendError<ClientMessage<std::string::String>>,
-    ),
+    #[error("Message sending failed")]
+    MessageSendError(#[from] MessageSendError),
+    /// Event channel errors
+    #[error("Event channel error")]
+    EventChannelError(#[from] EventChannelError),
     /// IRC parsing error
     #[error("IRC parse error:\n{0}")]
     IrcParseError(String),
     /// Tag parsing error
     #[error("Tag content parsing error in tag {0}={1}")]
     TagParseError(String, String),
+}
+
+/// Errors from the internal event channels sharing events between tasks
+#[derive(Debug, Error)]
+pub enum EventChannelError {
+    /// Channel was closed
+    #[error("Channel was closed")]
+    Closed,
+    /// Channel overflowed unexpectedly
+    #[error("Channel overflowed unexpectedly")]
+    Full,
+}
+
+/// Errors that happen while trying to send a message
+#[derive(Debug, Error, Clone)]
+pub enum MessageSendError {
+    /// Sending the message failed because the connection has already been closed
+    #[error("Sending the message failed because the connection has alrewady been closed")]
+    Closed(ClientMessage),
+    /// No connection in the pool has the twitch channel specified in the message
+    #[error("No connection in the pool has the twitch channel specified in the message")]
+    ChannelNotJoined(ClientMessage),
+    /// Unsupported message type
+    #[error("Unsupported message type: {0}")]
+    UnsupportedMessage(&'static str),
+}
+
+impl From<mpsc::error::SendError<ClientMessage>> for MessageSendError {
+    fn from(source: mpsc::error::SendError<ClientMessage>) -> Self {
+        MessageSendError::Closed(source.0)
+    }
+}
+
+impl From<mpsc::error::SendError<SentClientMessage>> for MessageSendError {
+    fn from(source: mpsc::error::SendError<SentClientMessage>) -> Self {
+        MessageSendError::Closed((source.0).message)
+    }
+}
+
+impl From<broadcast::SendError<ClientMessage>> for MessageSendError {
+    fn from(source: broadcast::SendError<ClientMessage>) -> Self {
+        MessageSendError::Closed(source.0)
+    }
 }
