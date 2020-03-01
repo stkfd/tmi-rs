@@ -69,6 +69,8 @@ pub enum MessageSendError {
     /// Unsupported message type
     #[error("Unsupported message type: {0}")]
     UnsupportedMessage(&'static str),
+    /// The connection pool had to create a new connection before joining a channel, but an error
+    /// happened while connecting
     #[error("Error while trying to create a new connection: {0}")]
     NewConnectionFailed(String),
 }

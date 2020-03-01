@@ -365,8 +365,8 @@ impl RateLimiter {
 
     fn init_channel(&self, channel: &str) {
         // if the channel was never queried before, insert the default setting
-        let read_guard = self.limits_map.read();
-        if !read_guard.contains_key(channel) {
+        let channel_exists = self.limits_map.read().contains_key(channel);
+        if !channel_exists {
             self.limits_map.write().insert(
                 channel.to_owned(),
                 ChannelLimits::new(self.default_slow, self.default_buckets.iter().cloned()).into(),

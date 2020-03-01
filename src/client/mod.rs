@@ -20,8 +20,11 @@ pub mod single;
 type TimeoutReceiver = oneshot::Receiver<()>;
 type InnerMessageSender = mpsc::Sender<SentClientMessage>;
 
+// TODO: expand on this to handle actual responses from Twitch to messages
+/// Message response container
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MessageResponse {
+    /// Message sent successfully with no response data
     Ok,
 }
 
