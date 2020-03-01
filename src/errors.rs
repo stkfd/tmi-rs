@@ -69,6 +69,8 @@ pub enum MessageSendError {
     /// Unsupported message type
     #[error("Unsupported message type: {0}")]
     UnsupportedMessage(&'static str),
+    #[error("Error while trying to create a new connection: {0}")]
+    NewConnectionFailed(String),
 }
 
 impl From<mpsc::error::SendError<ClientMessage>> for MessageSendError {

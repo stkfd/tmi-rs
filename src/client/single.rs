@@ -27,7 +27,7 @@ pub async fn connect(
 ) -> Result<TwitchClient<impl EventStream>, Error> {
     let (event_sender, event_stream) = mpsc::channel(cfg.channel_buffer);
 
-    let sender = connect_internal(
+    let (sender, _) = connect_internal(
         cfg,
         Arc::new(RateLimiter::from(&cfg.rate_limiter)),
         InternalSender(event_sender),
@@ -43,7 +43,7 @@ pub(crate) async fn connect_internal(
     cfg: &Arc<TwitchClientConfig>,
     rate_limiter: Arc<RateLimiter>,
     event_sender: impl Sink<Result<Event, Error>> + Send + Sync + 'static,
-) -> Result<MessageSender, Error> {
+) -> Result<(MessageSender, Arc<ConnectionContext>), Error> {
     let (connected_setter, connected_state) = watch::channel(ConnectedState::Disconnected);
     let state = Arc::new(ConnectionContext {
         connected_state,
@@ -105,7 +105,7 @@ pub(crate) async fn connect_internal(
     let mut connected_state = state.connected_state.clone();
     while connected_state.next().await != Some(ConnectedState::Active) {}
 
-    Ok(MessageSender::from(message_sender))
+    Ok((MessageSender::from(message_sender), state))
 }
 
 enum DisconnectReason {
