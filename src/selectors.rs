@@ -8,9 +8,6 @@ use std::hint::unreachable_unchecked;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use futures_core::Future;
-use futures_util::future::ready;
-
 use crate::event::*;
 
 /// Contains a PRIVMSG event
@@ -39,11 +36,11 @@ macro_rules! impl_selector {
         #[allow(missing_docs)]
         pub fn $fn_name<E: Borrow<Event<String>>>(
             item: E,
-        ) -> impl Future<Output = Option<SelectorResult<E, $inner_type>>> {
-            ready(match item.borrow() {
+        ) -> Option<SelectorResult<E, $inner_type>> {
+            match item.borrow() {
                 Event::$enum_variant(_) => Some(SelectorResult::new(item)),
                 _ => None,
-            })
+            }
         }
     };
 }

@@ -145,11 +145,14 @@ async fn inner_connect_task(
             .expect("set connecting state");
         let _connecting_guard = context.connecting_lock.write();
 
-        debug!("Connecting to {}", cfg.url);
+        info!("Connecting to {}", cfg.url);
         // create the websocket connection
         let (ws, _) = match connect_async(cfg.url.clone()).await {
             Ok(conn) => conn,
-            Err(_) => return Ok(DisconnectReason::ConnectFailed),
+            Err(e) => {
+                warn!("Connection could not be established. {}", e);
+                return Ok(DisconnectReason::ConnectFailed);
+            }
         };
 
         context
@@ -214,11 +217,11 @@ async fn inner_connect_task(
         event_sender: &mut (impl Sink<Result<Event, Error>> + Unpin),
     ) -> Option<Result<DisconnectReason, Error>> {
         if let Some(item) = item {
-            if let Err(Error::WebsocketError(tokio_tungstenite::tungstenite::Error::Io(io_err))) =
-                item
-            {
-                warn!("IO error in websocket, reconnecting: {}", io_err);
-                return Some(Ok(DisconnectReason::IoError));
+            if let Err(Error::WebsocketError(ws_err)) = &item {
+                if let tokio_tungstenite::tungstenite::Error::Io(io_err) = &**ws_err {
+                    warn!("IO error in websocket, reconnecting: {}", io_err);
+                    return Some(Ok(DisconnectReason::IoError));
+                }
             }
 
             if event_sender.send(item).await.is_err() {
@@ -319,6 +322,7 @@ fn decorate_receiver_with_internals(
                 }
             }
             Event::ConnectMessage(msg) if msg.command() == RPL_ENDOFMOTD => {
+                info!("Connection established.");
                 conn_ctx
                     .connected_setter
                     .broadcast(ConnectedState::Active)

@@ -32,7 +32,7 @@ impl<T> Sink<T> for InternalSender<mpsc::Sender<T>> {
     fn start_send(mut self: std::pin::Pin<&mut Self>, item: T) -> Result<(), Self::Error> {
         match self.0.try_send(item) {
             Ok(_) => Ok(()),
-            Err(TrySendError::Full(_item)) => Err(EventChannelError::Full),
+            Err(TrySendError::Full(_item)) => Err(EventChannelError::Overflow),
             Err(TrySendError::Closed(_item)) => Err(EventChannelError::Closed),
         }
     }

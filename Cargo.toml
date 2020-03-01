@@ -19,7 +19,7 @@ futures-core = "0.3"
 futures-sink = "0.3"
 futures-util = "0.3"
 pin-utils = "0.1.0-alpha.4"
-tokio-tungstenite = "0.10.1"
+tokio-tungstenite = { version = "0.10.1", features=["connect", "tls"] }
 tokio-tls = "0.3.0"
 url = "2.1.0"
 nom = "5.0.1"

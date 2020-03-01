@@ -16,7 +16,7 @@ use crate::util::RefToString;
 use crate::{Error, StringRef};
 
 /// Represents an IRC message
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct IrcMessage<T: StringRef> {
     /// IRCv3 tags
     pub tags: Option<FnvHashMap<T, String>>,
@@ -112,7 +112,7 @@ where
 }
 
 /// Struct containing the parts of the IRC message prefix
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct IrcPrefix<T> {
     /// Host part of the IRC prefix
     pub host: Option<T>,

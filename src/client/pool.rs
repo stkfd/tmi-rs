@@ -1,7 +1,6 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use fnv::FnvHashMap;
-use futures_util::stream::StreamExt;
 use tokio::stream;
 use tokio::sync::{broadcast, mpsc};
 
@@ -11,8 +10,11 @@ use crate::event::Event;
 use crate::stream::rate_limits::RateLimiter;
 use crate::stream::{RespondWithErrors, SentClientMessage};
 use crate::util::InternalSender;
+use crate::EventChannelError;
 use crate::{ClientMessage, Error, TwitchClientConfig};
 use crate::{MessageResponse, MessageSendError};
+use futures_core::Stream;
+use tokio::sync::broadcast::RecvError;
 
 /// Create a connection pool
 pub async fn connect(
@@ -32,10 +34,10 @@ pub async fn connect(
 
     let pool = ConnectionPool {
         whisper_connection: default_connections[0].clone(),
-        channel_connections: Default::default(),
+        channel_connections_map: Default::default(),
         event_sender: event_sender.clone(),
         event_receiver,
-        default_connections,
+        connections: default_connections,
     };
 
     {
@@ -43,7 +45,9 @@ pub async fn connect(
         let cfg = cfg.clone();
         let event_sender = event_sender.clone();
         tokio::spawn(async move {
-            let pool = pool;
+            use futures_util::stream::StreamExt;
+
+            let mut pool = pool;
             while let Some(SentClientMessage {
                 message: client_message,
                 responder,
@@ -51,7 +55,7 @@ pub async fn connect(
             {
                 match &client_message {
                     ClientMessage::PrivMsg { channel, .. } => {
-                        if let Some(handle) = pool.channel_connections.get(channel) {
+                        if let Some(handle) = pool.get_channel_connection(channel) {
                             handle
                                 .send(client_message)
                                 .await
@@ -75,7 +79,7 @@ pub async fn connect(
                             .respond_with_errors(responder);
                     }
                     ClientMessage::Part(channel) => {
-                        if let Some(handle) = pool.channel_connections.get(channel) {
+                        if let Some(handle) = pool.get_channel_connection(channel) {
                             handle
                                 .send(client_message)
                                 .await
@@ -88,20 +92,20 @@ pub async fn connect(
                     }
                     ClientMessage::Join(channel) => {
                         // already joined this channel
-                        if let Some(connection) = pool.channel_connections.get(channel) {
+                        if let Some(connection) = pool.get_channel_connection(channel) {
                             connection
                                 .send(client_message)
                                 .await
                                 .respond_with_errors(responder);
                         } else {
                             // get connection with the lowest amount of joined channels
-                            let handle = stream::iter(pool.channel_connections.values())
+                            let handle = stream::iter(&pool.connections)
                                 .filter_map(|handle| {
                                     let threshold = pool_cfg.threshold;
                                     async move {
                                         let count =
                                             handle.context.joined_channels.read().await.len();
-                                        if count < threshold as usize {
+                                        if count <= threshold as usize {
                                             Some((handle, count))
                                         } else {
                                             None
@@ -115,27 +119,32 @@ pub async fn connect(
                                 .map(|(handle, _)| handle);
 
                             if let Some(channel_handle) = handle {
+                                debug!("Joining channel on existing connection.");
                                 channel_handle
                                     .send(client_message)
                                     .await
                                     .respond_with_errors(responder);
                             } else {
+                                debug!("Adding new connection to the pool.");
                                 let conn_result =
                                     new_connection(&cfg, &rate_limiter, &event_sender)
                                         .await
                                         .map_err(|e| {
                                             MessageSendError::NewConnectionFailed(format!("{}", e))
                                         });
-
                                 match conn_result {
                                     Ok(conn) => {
+                                        let channel = channel.clone();
                                         conn.send(client_message)
                                             .await
                                             .respond_with_errors(responder);
+                                        let arc = Arc::new(conn);
+                                        let weak = Arc::downgrade(&arc);
+                                        pool.connections.push(arc);
+                                        pool.channel_connections_map.insert(channel.clone(), weak);
                                     }
                                     Err(_) => conn_result.respond_with_errors(responder),
                                 }
-                                todo!() // create new connection here
                             }
                         }
                     }
@@ -161,7 +170,7 @@ pub async fn connect(
                             .ok();
                     }
                     ClientMessage::Close => {
-                        for connection in pool.channel_connections.values() {
+                        for connection in &pool.connections {
                             if let Err(e) = connection.send(ClientMessage::Close).await {
                                 responder.send(Err(e)).ok();
                                 break;
@@ -237,8 +246,16 @@ pub struct ConnectionPoolHandle {
 
 impl ConnectionPoolHandle {
     /// Subscribe to a receiver for messages
-    pub fn subscribe_events(&self) -> broadcast::Receiver<Result<Event, Error>> {
-        self.event_sender.subscribe()
+    pub fn subscribe_events(&self) -> impl Stream<Item = Result<Event, Error>> {
+        use tokio::stream::StreamExt;
+        self.event_sender.subscribe().map(|result| match result {
+            Ok(event) => event,
+            Err(recv_err) => Err(match recv_err {
+                RecvError::Closed => EventChannelError::Closed,
+                RecvError::Lagged(_) => EventChannelError::Overflow,
+            }
+            .into()),
+        })
     }
 
     /// Get an owned sender for messages
@@ -258,9 +275,17 @@ struct ConnectionPool {
     /// receiver for the event broadcast channel
     event_receiver: broadcast::Receiver<Result<Event<String>, Error>>,
     /// default connections as specified in `init_connections`
-    default_connections: Vec<Arc<ConnectionHandle>>,
+    connections: Vec<Arc<ConnectionHandle>>,
     /// connection for whispers
     whisper_connection: Arc<ConnectionHandle>,
-    /// connection handles for individual channels
-    channel_connections: FnvHashMap<String, Arc<ConnectionHandle>>,
+    /// weak connection handles for individual channels
+    channel_connections_map: FnvHashMap<String, Weak<ConnectionHandle>>,
+}
+
+impl ConnectionPool {
+    fn get_channel_connection(&self, channel: &str) -> Option<Arc<ConnectionHandle>> {
+        self.channel_connections_map
+            .get(channel)
+            .and_then(|weak| weak.upgrade())
+    }
 }

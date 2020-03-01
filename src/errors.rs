@@ -8,13 +8,14 @@ use crate::event::Event;
 use crate::irc::IrcMessage;
 use crate::stream::SentClientMessage;
 use crate::ClientMessage;
+use std::sync::Arc;
 
 /// Error type for tmi-rs methods
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum Error {
     /// Websocket error
     #[error("Websocket error: {0}")]
-    WebsocketError(#[from] tokio_tungstenite::tungstenite::Error),
+    WebsocketError(#[from] Arc<tokio_tungstenite::tungstenite::Error>),
     /// Missing IRC parameter in one of the received messages
     #[error("Missing IRC command parameter at index {0} in the message {1:?}")]
     MissingIrcCommandParameter(usize, IrcMessage<String>),
@@ -47,14 +48,14 @@ pub enum Error {
 }
 
 /// Errors from the internal event channels sharing events between tasks
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum EventChannelError {
     /// Channel was closed
     #[error("Channel was closed")]
     Closed,
     /// Channel overflowed unexpectedly
     #[error("Channel overflowed unexpectedly")]
-    Full,
+    Overflow,
 }
 
 /// Errors that happen while trying to send a message
@@ -90,5 +91,11 @@ impl From<mpsc::error::SendError<SentClientMessage>> for MessageSendError {
 impl From<broadcast::SendError<ClientMessage>> for MessageSendError {
     fn from(source: broadcast::SendError<ClientMessage>) -> Self {
         MessageSendError::Closed(source.0)
+    }
+}
+
+impl From<tokio_tungstenite::tungstenite::Error> for Error {
+    fn from(err: tokio_tungstenite::tungstenite::Error) -> Self {
+        Error::WebsocketError(Arc::new(err))
     }
 }
