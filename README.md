@@ -1,6 +1,8 @@
 
 # tmi-rs: Rust Twitch chat interface
 
+*Note: there is currently a larger rework of the internal connection handling pending, progress can be followed in PR [#9](https://github.com/stkfd/tmi-rs/pull/9)*
+
 This is an asynchronous websocket based interface to Twitch chat intended as
 a base for chat bots and other programs that interact with Twitch chat.
 
