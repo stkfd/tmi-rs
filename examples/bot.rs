@@ -5,7 +5,7 @@ use std::env;
 use std::error::Error;
 use std::sync::Arc;
 
-use futures::stream::StreamExt;
+use tokio::stream::StreamExt;
 
 use pin_utils::pin_mut;
 use tmi_rs::client_messages::ClientMessage;
@@ -35,13 +35,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // process messages and do stuff with the data
     let privmsg_stream = receiver
-        .filter_map(|event| async move {
-            match event {
-                Ok(event) => Some(event),
-                Err(error) => {
-                    error!("Connection error: {}", error);
-                    None
-                }
+        .filter_map(|event| match event {
+            Ok(event) => Some(event),
+            Err(error) => {
+                error!("Connection error: {}", error);
+                None
             }
         })
         .filter_map(priv_msg); // filter only privmsg events
