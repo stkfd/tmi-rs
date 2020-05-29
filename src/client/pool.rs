@@ -80,6 +80,7 @@ pub async fn connect(
 
             loop {
                 tokio::select! {
+                    // handle next message to be sent
                     next_msg = message_receiver.recv() => {
                         if let Some(SentClientMessage {
                             message: client_message,
@@ -97,6 +98,7 @@ pub async fn connect(
                             break;
                         }
                     },
+                    // periodically remove connections that are no longer needed
                     _ = connection_cleanup_interval.tick() => {
                         pool.close_stale_connections().await;
                     }
@@ -126,22 +128,31 @@ async fn send_message(
     match &client_message {
         ClientMessage::Whisper { .. } => {
             pool.whisper_connection
-                .send(client_message)
-                .await
-                .respond_with_errors(responder);
+                .handle_client_message(client_message, responder)
+                .await;
         }
         ClientMessage::Ping | ClientMessage::Pong => {
             pool.whisper_connection
-                .send(client_message)
-                .await
-                .respond_with_errors(responder);
+                .handle_client_message(client_message, responder)
+                .await;
         }
-        ClientMessage::PrivMsg { channel, .. } | ClientMessage::Part(channel) => {
+        ClientMessage::PrivMsg { channel, .. } => {
             if let Some(handle) = pool.get_channel_connection(channel) {
                 handle
-                    .send(client_message)
-                    .await
-                    .respond_with_errors(responder);
+                    .handle_client_message(client_message, responder)
+                    .await;
+            } else {
+                responder
+                    .send(Err(MessageSendError::ChannelNotJoined(client_message)))
+                    .ok();
+            }
+        }
+        ClientMessage::Part(channel) => {
+            if let Some(handle) = pool.get_channel_connection(channel) {
+                pool.channel_connections_map.remove(channel);
+                handle
+                    .handle_client_message(client_message, responder)
+                    .await;
             } else {
                 responder
                     .send(Err(MessageSendError::ChannelNotJoined(client_message)))
@@ -152,9 +163,8 @@ async fn send_message(
             // already joined this channel
             if let Some(connection) = pool.get_channel_connection(channel) {
                 connection
-                    .send(client_message)
-                    .await
-                    .respond_with_errors(responder);
+                    .handle_client_message(client_message, responder)
+                    .await;
             } else {
                 // get connection with the lowest amount of joined channels
                 let connections = pool.connections.read().await.clone();
@@ -181,9 +191,8 @@ async fn send_message(
                     pool.channel_connections_map
                         .insert(channel.clone(), Arc::downgrade(channel_handle));
                     channel_handle
-                        .send(client_message)
-                        .await
-                        .respond_with_errors(responder);
+                        .handle_client_message(client_message, responder)
+                        .await;
                 } else {
                     debug!("Adding new connection to the pool.");
                     let conn_result = new_connection(connection_cfg)
@@ -192,9 +201,7 @@ async fn send_message(
                     match conn_result {
                         Ok(conn) => {
                             let channel = channel.clone();
-                            conn.send(client_message)
-                                .await
-                                .respond_with_errors(responder);
+                            conn.handle_client_message(client_message, responder).await;
                             let arc = Arc::new(conn);
                             let weak = Arc::downgrade(&arc);
                             pool.connections.write().await.push(arc);
@@ -240,6 +247,7 @@ async fn send_message(
     }
 }
 
+/// Configures a new connection for use inside the pool
 struct ConnectionConfig<'a> {
     cfg: &'a Arc<TwitchClientConfig>,
     rate_limiter: &'a Arc<RateLimiter>,
@@ -247,6 +255,7 @@ struct ConnectionConfig<'a> {
     handle_whispers: bool,
 }
 
+/// Create a new connection for use inside of the pool
 async fn new_connection(connection_cfg: &ConnectionConfig<'_>) -> Result<ConnectionHandle, Error> {
     let (sender, context) = connect_internal(
         connection_cfg.cfg,
@@ -277,8 +286,14 @@ struct ConnectionHandle {
 }
 
 impl ConnectionHandle {
+    /// Send a client message
     async fn send(&self, msg: ClientMessage) -> Result<MessageResponse, MessageSendError> {
         self.sender.clone().send(msg).await
+    }
+
+    /// Sends a client message and returns the response if applicable
+    async fn handle_client_message(&self, msg: ClientMessage, responder: MessageResponder) {
+        self.send(msg).await.respond_with_errors(responder)
     }
 
     async fn close(&self) {
