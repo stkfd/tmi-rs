@@ -47,12 +47,12 @@ pub(crate) trait RespondWithErrors {
     fn respond_with_errors(self, responder: MessageResponder);
 }
 
-impl<T, E> RespondWithErrors for Result<T, E>
+impl<E> RespondWithErrors for Result<MessageResponse, E>
 where
     E: Into<MessageSendError>,
 {
     fn respond_with_errors(self, responder: MessageResponder) {
-        self.map_err(|e| responder.send(Err(e.into()))).ok();
+        responder.send(self.map_err(|e| e.into())).ok();
     }
 }
 

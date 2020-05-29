@@ -2,8 +2,8 @@
 
 use tokio::sync::{mpsc, oneshot};
 
+use crate::ClientMessage;
 use crate::MessageSendError;
-use crate::{ClientMessage, Error};
 
 use crate::stream::{message_responder_channel, SentClientMessage};
 pub use config::*;
@@ -43,7 +43,7 @@ impl From<InnerMessageSender> for MessageSender {
 impl MessageSender {
     /// Send a message
     pub async fn send(&mut self, msg: ClientMessage) -> Result<MessageResponse, MessageSendError> {
-        let (tx, _rx) = message_responder_channel();
+        let (tx, rx) = message_responder_channel();
         self.sender
             .send(SentClientMessage {
                 message: msg,
@@ -51,6 +51,7 @@ impl MessageSender {
             })
             .await
             .map_err(|e| MessageSendError::Closed(e.0.message))?;
+        rx.await.expect("message send result")?;
         Ok(MessageResponse::Ok)
     }
 }
@@ -78,17 +79,4 @@ impl<St> TwitchClient<St> {
     pub fn stream_mut(&mut self) -> &mut St {
         &mut self.stream
     }
-}
-
-async fn send_capabilities(
-    cfg: &TwitchClientConfig,
-    sender: &mut MessageSender,
-) -> Result<(), Error> {
-    // send capability requests on connect
-    let capabilities = cfg.get_capabilities();
-    sender.send(ClientMessage::CapRequest(capabilities)).await?;
-    for msg in ClientMessage::login(cfg.username.clone(), cfg.token.clone()).into_iter() {
-        sender.send(msg).await?;
-    }
-    Ok(())
 }

@@ -62,7 +62,7 @@ pub enum EventChannelError {
 #[derive(Debug, Error, Clone)]
 pub enum MessageSendError {
     /// Sending the message failed because the connection has already been closed
-    #[error("Sending the message failed because the connection has alrewady been closed")]
+    #[error("Sending the message failed because the connection has already been closed")]
     Closed(ClientMessage),
     /// No connection in the pool has the twitch channel specified in the message
     #[error("No connection in the pool has the twitch channel specified in the message")]

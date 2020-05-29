@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, oneshot, watch, RwLock};
 use tokio::time::{delay_for, delay_until, Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-use crate::client::{send_capabilities, MessageSender, TimeoutReceiver, TwitchClient};
+use crate::client::{MessageSender, TimeoutReceiver, TwitchClient};
 use crate::client_messages::ClientMessage;
 use crate::event::tags::*;
 use crate::event::*;
@@ -18,7 +18,7 @@ use crate::irc_constants::RPL_ENDOFMOTD;
 use crate::stream::rate_limits::RateLimiter;
 use crate::stream::{ClientMessageStream, EventStream, SendStreamExt, SentClientMessage};
 use crate::util::InternalSender;
-use crate::{Error, TwitchClientConfig};
+use crate::{Error, MessageResponse, TwitchClientConfig};
 
 /// Connects to the Twitch servers, authenticates and listens for messages. Await the returned future
 /// to block until the connection is closed.
@@ -31,6 +31,7 @@ pub async fn connect(
         cfg,
         Arc::new(RateLimiter::from(&cfg.rate_limiter)),
         InternalSender(event_sender),
+        true,
     )
     .await?;
     Ok(TwitchClient {
@@ -43,6 +44,7 @@ pub(crate) async fn connect_internal(
     cfg: &Arc<TwitchClientConfig>,
     rate_limiter: Arc<RateLimiter>,
     event_sender: impl Sink<Result<Event, Error>> + Send + Sync + 'static,
+    handle_whispers: bool,
 ) -> Result<(MessageSender, Arc<ConnectionContext>), Error> {
     let (connected_setter, connected_state) = watch::channel(ConnectedState::Disconnected);
     let state = Arc::new(ConnectionContext {
@@ -51,6 +53,7 @@ pub(crate) async fn connect_internal(
         connecting_lock: RwLock::new(()),
         joined_channels: RwLock::new(vec![]),
         rate_limiter,
+        whisper_enabled: handle_whispers,
     });
 
     let (message_sender, message_stream) = mpsc::channel::<SentClientMessage>(cfg.channel_buffer);
@@ -87,6 +90,7 @@ pub(crate) async fn connect_internal(
                     Pin::new(&mut event_sender),
                     &mut message_sender,
                     &mut message_stream,
+                    handle_whispers,
                 )
                 .await?
                 {
@@ -129,6 +133,7 @@ pub struct ConnectionContext {
     /// whether the connection is currently active
     pub connected_state: watch::Receiver<ConnectedState>,
     connected_setter: watch::Sender<ConnectedState>,
+    pub(crate) whisper_enabled: bool,
 }
 
 async fn inner_connect_task(
@@ -137,6 +142,7 @@ async fn inner_connect_task(
     mut event_sender: Pin<&mut impl Sink<Result<Event, Error>>>,
     message_sender: &mut MessageSender,
     message_stream: &mut (impl ClientMessageStream + 'static),
+    handle_whispers: bool,
 ) -> Result<DisconnectReason, Error> {
     let (connection_future, incoming_stream) = {
         context
@@ -163,34 +169,33 @@ async fn inner_connect_task(
         // wrap with IRC/Twitch logic
         let (mut chat_sink, incoming_stream) = TwitchChatStream::new(ws).split::<Message>();
 
-        let mut decorated_sender_stream = message_stream.map(|item| {
-            match &item.message {
-                ClientMessage::Join(channel) => {
-                    let conn_ctx = context.clone();
-                    let channel = channel.clone();
-                    tokio::spawn(async move {
-                        conn_ctx.joined_channels.write().await.push(channel);
-                    });
-                }
-                ClientMessage::Part(channel) => {
-                    let conn_ctx = context.clone();
-                    let channel = channel.clone();
-                    tokio::spawn(async move {
-                        conn_ctx
-                            .joined_channels
-                            .write()
-                            .await
-                            .retain(|ch| ch != &channel);
-                    });
-                }
-                _ => {}
-            }
-            item
-        });
         let connection_future = async move {
-            while let Some(msg) = decorated_sender_stream.next().await {
+            while let Some(SentClientMessage { message, responder }) = message_stream.next().await {
+                match &message {
+                    ClientMessage::Join(channel) => {
+                        let conn_ctx = context.clone();
+                        let channel = channel.clone();
+                        tokio::spawn(async move {
+                            conn_ctx.joined_channels.write().await.push(channel);
+                        });
+                    }
+                    ClientMessage::Part(channel) => {
+                        let conn_ctx = context.clone();
+                        let channel = channel.clone();
+                        tokio::spawn(async move {
+                            conn_ctx
+                                .joined_channels
+                                .write()
+                                .await
+                                .retain(|ch| ch != &channel);
+                        });
+                    }
+                    _ => {}
+                }
+
                 let _connecting_guard = context.connecting_lock.read().await;
-                chat_sink.send(msg.message.into()).await?;
+                chat_sink.send(message.into()).await?;
+                responder.send(Ok(MessageResponse::Ok)).ok();
             }
             Ok::<(), Error>(())
         }
@@ -198,12 +203,6 @@ async fn inner_connect_task(
 
         (connection_future, incoming_stream)
     };
-
-    send_capabilities(cfg, message_sender).await?;
-
-    for channel in context.joined_channels.read().await.clone() {
-        message_sender.send(ClientMessage::Join(channel)).await?;
-    }
 
     let (event_receiver, timeout_receiver) =
         decorate_receiver_with_internals(context, cfg, message_sender, incoming_stream);
@@ -215,12 +214,19 @@ async fn inner_connect_task(
     async fn handle_event(
         item: Option<Result<Event, Error>>,
         event_sender: &mut (impl Sink<Result<Event, Error>> + Unpin),
+        handle_whispers: bool,
     ) -> Option<Result<DisconnectReason, Error>> {
         if let Some(item) = item {
             if let Err(Error::WebsocketError(ws_err)) = &item {
                 if let tokio_tungstenite::tungstenite::Error::Io(io_err) = &**ws_err {
                     warn!("IO error in websocket, reconnecting: {}", io_err);
                     return Some(Ok(DisconnectReason::IoError));
+                }
+            }
+
+            if !handle_whispers {
+                if let Ok(Event::Whisper(_)) = &item {
+                    return None;
                 }
             }
 
@@ -235,6 +241,31 @@ async fn inner_connect_task(
         None
     }
 
+    tokio::spawn({
+        let context = context.clone();
+        let cfg = cfg.clone();
+        let mut message_sender = message_sender.clone();
+        async move {
+            // todo: get rid of unwraps
+            // send capability requests on connect
+            let capabilities = cfg.get_capabilities();
+            message_sender
+                .send(ClientMessage::CapRequest(capabilities))
+                .await
+                .unwrap();
+            for msg in ClientMessage::login(cfg.username.clone(), cfg.token.clone()).into_iter() {
+                message_sender.send(msg).await.unwrap();
+            }
+
+            for channel in context.joined_channels.read().await.clone() {
+                message_sender
+                    .send(ClientMessage::Join(channel))
+                    .await
+                    .unwrap();
+            }
+        }
+    });
+
     if let Some(timeout_receiver) = timeout_receiver {
         let mut timeout_receiver = timeout_receiver.fuse();
 
@@ -243,7 +274,7 @@ async fn inner_connect_task(
         loop {
             select! {
                 item = event_receiver.next() => {
-                    if let Some(handle_event_result) = handle_event(item, &mut event_sender).await {
+                    if let Some(handle_event_result) = handle_event(item, &mut event_sender, handle_whispers).await {
                         return handle_event_result;
                     }
                 },
@@ -260,7 +291,7 @@ async fn inner_connect_task(
         loop {
             select! {
                 item = event_receiver.next() => {
-                    if let Some(handle_event_result) = handle_event(item, &mut event_sender).await {
+                    if let Some(handle_event_result) = handle_event(item, &mut event_sender, handle_whispers).await {
                         return handle_event_result;
                     }
                 },
