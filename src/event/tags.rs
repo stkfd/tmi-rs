@@ -86,7 +86,7 @@ impl<T: StringRef> ClearMsgTags<T> for EventData<T, ClearMsgEvent<T>> {}
 
 /// Accessor for the `login` tag
 pub trait LoginTag<T: StringRef>: MessageTags<T> {
-    ///	`login` tag. Name of the user who sent the message
+    /// `login` tag. Name of the user who sent the message
     #[inline]
     fn login(&self) -> Result<&str, Error> {
         self.required_tag("login")

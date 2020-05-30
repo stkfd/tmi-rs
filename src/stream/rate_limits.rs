@@ -3,7 +3,6 @@
 use core::pin::Pin;
 use std::collections::vec_deque::VecDeque;
 use std::iter::FromIterator;
-use std::sync::Arc;
 use std::time::Duration;
 
 use fnv::FnvHashMap;
@@ -13,6 +12,7 @@ use futures_util::stream::StreamExt;
 use futures_util::FutureExt;
 use parking_lot::{Mutex, RwLock};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
+use std::borrow::Borrow;
 use tokio::time::{delay_for, Delay, Instant};
 
 /// Trait to apply to messages that contains information about which rate limits apply
@@ -57,26 +57,35 @@ pub trait RateLimitable {
 /// Rate limiting buffered sink
 #[derive(Debug)]
 #[must_use = "sinks do nothing unless polled"]
-pub struct BufferedRateLimiter<St: Stream<Item = Item>, Item: RateLimitable> {
+pub struct BufferedRateLimiter<
+    St: Stream<Item = Item>,
+    Item: RateLimitable,
+    Rl: Borrow<RateLimiter>,
+> {
     stream: St,
     buf: VecDeque<Item>,
     capacity: usize,
-    rate_limiter: Arc<RateLimiter>,
+    rate_limiter: Rl,
 }
 
-impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> Unpin for BufferedRateLimiter<St, Item> {}
+impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable, Rl: Borrow<RateLimiter>> Unpin
+    for BufferedRateLimiter<St, Item, Rl>
+{
+}
 
-impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<St, Item> {
+impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable, Rl: Borrow<RateLimiter>>
+    BufferedRateLimiter<St, Item, Rl>
+{
     unsafe_pinned!(stream: St);
     unsafe_unpinned!(buf: VecDeque<Item>);
     unsafe_unpinned!(capacity: usize);
 
-    pub(super) fn new(stream: St, capacity: usize, rate_limiter: &Arc<RateLimiter>) -> Self {
+    pub(super) fn new(stream: St, capacity: usize, rate_limiter: Rl) -> Self {
         BufferedRateLimiter {
             stream,
             buf: VecDeque::with_capacity(capacity),
             capacity,
-            rate_limiter: rate_limiter.clone(),
+            rate_limiter,
         }
     }
 
@@ -87,7 +96,7 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
             ..
         } = Pin::into_inner(self);
         let ready_item_idx = buf.iter().enumerate().find_map(|(i, item)| {
-            if item.poll(&**rate_limiter, cx).is_ready() {
+            if item.poll(rate_limiter.borrow(), cx).is_ready() {
                 Some(i)
             } else {
                 None
@@ -121,10 +130,11 @@ impl<St: Stream<Item = Item> + Unpin, Item: RateLimitable> BufferedRateLimiter<S
     }
 }
 
-impl<S, Item> Stream for BufferedRateLimiter<S, Item>
+impl<S, Item, Rl> Stream for BufferedRateLimiter<S, Item, Rl>
 where
     S: Stream<Item = Item> + Unpin,
     Item: RateLimitable,
+    Rl: Borrow<RateLimiter>,
 {
     type Item = S::Item;
 
@@ -138,7 +148,7 @@ where
         }
         match self.as_mut().stream().poll_next(cx) {
             Poll::Ready(Some(item)) => {
-                if item.poll(&*self.rate_limiter, cx).is_ready() {
+                if item.poll(self.rate_limiter.borrow(), cx).is_ready() {
                     Poll::Ready(Some(item))
                 } else {
                     self.as_mut().buf().push_back(item);
@@ -161,10 +171,11 @@ where
     }
 }
 
-impl<S, Item> FusedStream for BufferedRateLimiter<S, Item>
+impl<S, Item, Rl> FusedStream for BufferedRateLimiter<S, Item, Rl>
 where
     S: Stream<Item = Item> + FusedStream + Unpin,
     Item: RateLimitable,
+    Rl: Borrow<RateLimiter>,
 {
     fn is_terminated(&self) -> bool {
         self.stream.is_terminated() && self.buf.is_empty()
@@ -354,7 +365,8 @@ impl RateLimiter {
 
     fn init_channel(&self, channel: &str) {
         // if the channel was never queried before, insert the default setting
-        if !self.limits_map.read().contains_key(channel) {
+        let channel_exists = self.limits_map.read().contains_key(channel);
+        if !channel_exists {
             self.limits_map.write().insert(
                 channel.to_owned(),
                 ChannelLimits::new(self.default_slow, self.default_buckets.iter().cloned()).into(),
@@ -539,16 +551,25 @@ mod test {
     use tokio_test::{assert_pending, assert_ready, assert_ready_eq};
 
     use crate::stream::rate_limits::{
-        RateLimitBucket, RateLimitBucketConfig, RateLimitable, RateLimiterConfig, SlowModeLimit,
+        RateLimitBucket, RateLimitBucketConfig, RateLimitable, RateLimiter, RateLimiterConfig,
+        SlowModeLimit,
     };
-    use crate::stream::SendStreamExt;
+    use crate::stream::{message_responder_channel, SendStreamExt, SentClientMessage};
     use crate::ClientMessage;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct Limitable(Option<String>);
+
     impl RateLimitable for Limitable {
         fn channel_limits(&self) -> Option<&str> {
             self.0.as_ref().map(AsRef::as_ref)
+        }
+    }
+
+    fn example_message() -> SentClientMessage {
+        SentClientMessage {
+            message: ClientMessage::message("#channel".to_string(), "msg".to_string()),
+            responder: message_responder_channel().0,
         }
     }
 
@@ -557,15 +578,23 @@ mod test {
         let cx = &mut noop_context();
         pause();
         let rate_limiter = Arc::new((&RateLimiterConfig::default()).into());
-        let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
-        let mut stream =
-            iter(vec![a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
+        let mut stream = iter(vec![
+            example_message(),
+            example_message(),
+            example_message(),
+        ])
+        .rate_limited(10, rate_limiter);
         assert_ready!(stream.poll_next_unpin(cx));
         assert_pending!(stream.poll_next_unpin(cx));
 
         advance(Duration::from_millis(1100)).await;
 
-        assert_ready_eq!(stream.poll_next_unpin(cx), Some(a.clone()));
+        assert_ready_eq!(
+            stream
+                .poll_next_unpin(cx)
+                .map(|poll| poll.map(|m| m.message)),
+            Some(example_message().message)
+        );
 
         advance(Duration::from_millis(800)).await;
 
@@ -573,18 +602,32 @@ mod test {
 
         advance(Duration::from_millis(1000)).await;
 
-        assert_ready_eq!(stream.poll_next_unpin(cx), Some(a));
-        assert_ready_eq!(stream.poll_next_unpin(cx), None);
+        assert_ready_eq!(
+            stream
+                .poll_next_unpin(cx)
+                .map(|poll| poll.map(|m| m.message)),
+            Some(example_message().message)
+        );
+        assert_ready_eq!(
+            stream
+                .poll_next_unpin(cx)
+                .map(|poll| poll.map(|m| m.message)),
+            None
+        );
     }
 
     #[tokio::test]
     async fn test_change_limits() {
         let cx = &mut noop_context();
         pause();
-        let rate_limiter = Arc::new(RateLimiterConfig::default().into());
-        let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
-        let mut stream =
-            iter(vec![a.clone(), a.clone(), a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
+        let rate_limiter: Arc<RateLimiter> = Arc::new((&RateLimiterConfig::default()).into());
+        let mut stream = iter(vec![
+            example_message(),
+            example_message(),
+            example_message(),
+            example_message(),
+        ])
+        .rate_limited(10, rate_limiter.clone());
         rate_limiter.set_slow_mode("#channel", SlowModeLimit::Channel(10));
         assert_ready!(stream.poll_next_unpin(cx));
         assert_pending!(stream.poll_next_unpin(cx));
@@ -592,26 +635,46 @@ mod test {
         advance(Duration::from_secs(1)).await;
         rate_limiter.set_slow_mode("#channel", SlowModeLimit::Channel(5));
 
-        assert_ready_eq!(stream.poll_next_unpin(cx), Some(a.clone()));
+        assert_ready_eq!(
+            stream
+                .poll_next_unpin(cx)
+                .map(|poll| poll.map(|m| m.message)),
+            Some(example_message().message)
+        );
 
         rate_limiter.set_slow_mode("#channel", SlowModeLimit::Unlimited);
-        assert_ready_eq!(stream.poll_next_unpin(cx), Some(a));
+        assert_ready_eq!(
+            stream
+                .poll_next_unpin(cx)
+                .map(|poll| poll.map(|m| m.message)),
+            Some(example_message().message)
+        );
     }
 
     #[tokio::test]
     async fn test_custom_slowmode() {
         let cx = &mut noop_context();
         pause();
-        let a = ClientMessage::message("#channel".to_string(), "msg".to_string());
-        let rate_limiter = Arc::new(RateLimiterConfig::default().into());
-        let mut stream = iter(vec![a.clone(), a.clone()]).rate_limited(10, &rate_limiter);
+        let rate_limiter: Arc<RateLimiter> = Arc::new((&RateLimiterConfig::default()).into());
+        let mut stream =
+            iter(vec![example_message(), example_message()]).rate_limited(10, rate_limiter.clone());
         rate_limiter.set_slow_mode("#channel", SlowModeLimit::Channel(10));
         assert_ready!(stream.poll_next_unpin(cx));
         advance(Duration::from_secs(5)).await;
         assert_pending!(stream.poll_next_unpin(cx));
         advance(Duration::from_millis(5001)).await;
-        assert_ready_eq!(stream.poll_next_unpin(cx), Some(a));
-        assert_ready_eq!(stream.poll_next_unpin(cx), None);
+        assert_ready_eq!(
+            stream
+                .poll_next_unpin(cx)
+                .map(|poll| poll.map(|m| m.message)),
+            Some(example_message().message)
+        );
+        assert_ready_eq!(
+            stream
+                .poll_next_unpin(cx)
+                .map(|poll| poll.map(|m| m.message)),
+            None
+        );
     }
 
     #[tokio::test]
@@ -631,7 +694,7 @@ mod test {
         let cx = &mut noop_context();
         pause();
         let mut b: &RateLimitBucket =
-            &RateLimitBucketConfig::new(2, Duration::from_secs(10)).into();
+            &(&RateLimitBucketConfig::new(2, Duration::from_secs(10))).into();
         assert_ready!(b.poll_next_unpin(cx));
 
         advance(Duration::from_secs(3)).await;

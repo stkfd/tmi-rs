@@ -150,7 +150,9 @@ where
     }
 
     fn start_send(self: Pin<&mut Self>, item: IntoMessage) -> Result<(), Self::Error> {
-        Pin::new(&mut Pin::into_inner(self).stream).start_send(Message::from(item))
+        let msg = Message::from(item);
+        debug!("> {}", msg);
+        Pin::new(&mut Pin::into_inner(self).stream).start_send(msg)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -166,7 +168,7 @@ fn parse(msg_result: Result<Message, WsError>) -> EventBuffer {
     match msg_result {
         Ok(msg) => match msg {
             Message::Text(msg) => {
-                debug!("< {}", msg);
+                debug!("< {}", msg.trim());
                 match IrcMessage::<&str>::parse_many(&msg) {
                     Ok((_remaining, messages)) => {
                         let event_results = messages.into_iter().map(|irc_msg| {

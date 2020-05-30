@@ -29,7 +29,10 @@ pub type SharedEvent = Arc<Event<String>>;
 /// Enum containing all event types that can be received from Twitch
 #[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq, Eq, From)]
-pub enum Event<T: StringRef> {
+pub enum Event<T = String>
+where
+    T: StringRef,
+{
     PrivMsg(EventData<T, PrivMsgEvent<T>>),
     Whisper(EventData<T, WhisperEvent<T>>),
     Join(EventData<T, JoinEvent<T>>),

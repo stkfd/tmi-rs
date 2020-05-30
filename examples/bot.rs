@@ -3,15 +3,15 @@ extern crate log;
 
 use std::env;
 use std::error::Error;
-
-use futures::stream::StreamExt;
-
 use std::sync::Arc;
+
+use tokio::stream::StreamExt;
+
+use pin_utils::pin_mut;
 use tmi_rs::client_messages::ClientMessage;
 use tmi_rs::event::*;
 use tmi_rs::selectors::priv_msg;
-use tmi_rs::stream::rate_limits::RateLimiter;
-use tmi_rs::{TwitchClient, TwitchClientConfig, TwitchClientConfigBuilder};
+use tmi_rs::{single::connect, TwitchClientConfig, TwitchClientConfigBuilder};
 
 /// To run this example, the TWITCH_CHANNEL, TWITCH_USERNAME and TWITCH_AUTH environment variables
 /// need to be set.
@@ -25,42 +25,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .token(env::var("TWITCH_AUTH")?)
             .build()?,
     );
-    let client = TwitchClient::new(&config, &Arc::new(RateLimiter::from(&config.rate_limiter)));
-
-    let (sender, receiver) = client.connect().await?;
+    let mut client = connect(&config).await?;
+    let mut sender = client.sender_cloned();
+    let receiver = client.stream_mut();
 
     // join a channel
-    sender.send(ClientMessage::join(channel.clone()))?;
+    sender.send(ClientMessage::join(channel.clone())).await?;
+    info!("Joined channel");
 
     // process messages and do stuff with the data
-    receiver
-        .filter_map(|event| {
-            async move {
-                match event {
-                    Ok(event) => Some(event),
-                    Err(error) => {
-                        error!("Connection error: {}", error);
-                        None
-                    }
-                }
+    let privmsg_stream = receiver
+        .filter_map(|event| match event {
+            Ok(event) => Some(event),
+            Err(error) => {
+                error!("Connection error: {}", error);
+                None
             }
         })
-        .filter_map(priv_msg)
-        .for_each(|event_data| {
-            let sender = &sender;
-            async move {
-                info!("{:?}", event_data);
-                if event_data.message().starts_with("!hello") {
-                    // return response message to the stream
-                    sender
-                        .send(ClientMessage::message(
-                            event_data.channel().to_owned(),
-                            "Hello World!",
-                        ))
-                        .unwrap();
-                }
-            }
-        })
-        .await;
+        .filter_map(priv_msg); // filter only privmsg events
+
+    pin_mut!(privmsg_stream);
+
+    while let Some(event_data) = privmsg_stream.next().await {
+        info!("{:?}", event_data);
+        if event_data.message().starts_with("!hello") {
+            // return response message to the stream
+            sender
+                .send(ClientMessage::message(
+                    event_data.channel().to_owned(),
+                    "Hello World!",
+                ))
+                .await?;
+        }
+    }
     Ok(())
 }
