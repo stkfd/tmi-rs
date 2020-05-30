@@ -19,15 +19,15 @@ extern crate log;
 
 use std::env;
 use std::error::Error;
+use std::sync::Arc;
 
-use futures::future::{join, ready};
-use futures::sink::SinkExt;
-use futures::stream::StreamExt;
+use tokio::stream::StreamExt;
 
+use pin_utils::pin_mut;
 use tmi_rs::client_messages::ClientMessage;
 use tmi_rs::event::*;
 use tmi_rs::selectors::priv_msg;
-use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
+use tmi_rs::{single::connect, TwitchClientConfig, TwitchClientConfigBuilder};
 
 /// To run this example, the TWITCH_CHANNEL, TWITCH_USERNAME and TWITCH_AUTH environment variables
 /// need to be set.
@@ -35,54 +35,45 @@ use tmi_rs::{TwitchChatConnection, TwitchClient, TwitchClientConfigBuilder};
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     let channel = env::var("TWITCH_CHANNEL")?;
-    let client: TwitchClient = TwitchClientConfigBuilder::default()
-        .username(env::var("TWITCH_USERNAME")?)
-        .token(env::var("TWITCH_AUTH")?)
-        .build()?
-        .into();
-
-    let TwitchChatConnection {
-        sender,
-        receiver,
-        error_receiver,
-    } = client.connect().await?;
-    let mut sender = &sender;
+    let config: Arc<TwitchClientConfig> = Arc::new(
+        TwitchClientConfigBuilder::default()
+            .username(env::var("TWITCH_USERNAME")?)
+            .token(env::var("TWITCH_AUTH")?)
+            .build()?,
+    );
+    let mut client = connect(&config).await?;
+    let mut sender = client.sender_cloned();
+    let receiver = client.stream_mut();
 
     // join a channel
     sender.send(ClientMessage::join(channel.clone())).await?;
+    info!("Joined channel");
 
     // process messages and do stuff with the data
-    let process_messages = async {
-        let send_result = receiver
-            .filter_map(priv_msg)
-            .filter_map(|event_data| {
-                info!("{:?}", event_data);
-                ready(if event_data.message().starts_with("!hello") {
-                    // return response message to the stream
-                    Some(ClientMessage::message(
-                        event_data.channel().to_owned(),
-                        "Hello World!",
-                    ))
-                } else {
-                    None
-                })
-            })
-            .map(Ok)
-            .forward(sender)
-            .await;
+    let privmsg_stream = receiver
+        .filter_map(|event| match event {
+            Ok(event) => Some(event),
+            Err(error) => {
+                error!("Connection error: {}", error);
+                None
+            }
+        })
+        .filter_map(priv_msg); // filter only privmsg events
 
-        if let Err(e) = send_result {
-            error!("{}", e);
-        }
-    };
+    pin_mut!(privmsg_stream);
 
-    // log any connection errors
-    let process_errors = error_receiver.for_each(|error| {
-        async move {
-            error!("Connection error: {}", error);
+    while let Some(event_data) = privmsg_stream.next().await {
+        info!("{:?}", event_data);
+        if event_data.message().starts_with("!hello") {
+            // return response message to the stream
+            sender
+                .send(ClientMessage::message(
+                    event_data.channel().to_owned(),
+                    "Hello World!",
+                ))
+                .await?;
         }
-    });
-    join(process_messages, process_errors).await;
+    }
     Ok(())
 }
 ```
