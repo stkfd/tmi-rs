@@ -6,6 +6,7 @@ use tokio::stream;
 use tokio::sync::broadcast::RecvError;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{interval_at, Duration, Instant};
+use tokio::select;
 
 use crate::client::single::{connect_internal, ConnectionContext};
 use crate::client::MessageSender;
@@ -79,7 +80,7 @@ pub async fn connect(
             );
 
             loop {
-                tokio::select! {
+                select! {
                     // handle next message to be sent
                     next_msg = message_receiver.recv() => {
                         if let Some(SentClientMessage {
