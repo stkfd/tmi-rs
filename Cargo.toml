@@ -29,7 +29,7 @@ vec_map = "0.8.2"
 
 [dependencies.tokio]
 version = "0.2.21"
-features = ["sync", "rt-core", "net", "time", "signal", "stream"]
+features = ["sync", "rt-core", "net", "time", "signal", "stream", "macros"]
 
 [lib]
 name = "tmi_rs"
